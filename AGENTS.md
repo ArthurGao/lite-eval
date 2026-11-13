@@ -37,7 +37,7 @@ If a change must contradict the design, update the design in the same change and
 
 ## Current stage
 
-**E1 done (2026-11-13); next E2** (retrieval pack, compare, gates, lite-rag migration; design §16). v1 = E0–E3.
+**E2 done (2026-11-14; lite-rag migrated); next E3** (the Viewer; design §16). v1 = E0–E3.
 
 ## Rules
 

@@ -552,9 +552,9 @@ assert_gate(run)                     # 在 pytest 里调用；失败时打印退
 ## 13. 与现有项目和 KB 的关系
 
 - **迁移**：每接入一个项目，迁移前后的数字必须逐项相同（同一配置、同一数据）。迁完后删除原项目的评测脚本，改为调用 lite-eval：
-  - lite-rag：E2；
+  - lite-rag：E2（已迁移，2026-11-14，lite-rag S12：`literag eval` 是 lite-eval 上的薄包装）；
   - lite-mem 和 llm-steward：E4。
-- **被测系统适配器放在使用方的仓库里**（例如 `lite-rag/evals/target.py`），lite-eval 不依赖任何被测项目。
+- **被测系统适配器放在使用方的仓库里**（例如 lite-rag 的 `src/lite_rag/eval.py` 里的 `LiteRagTarget`），lite-eval 不依赖任何被测项目。
 - **KB**：
   - `lite-eval export kb <run>` 生成 `global/llm-evals/results.jsonl` 格式的行（字段以 KB README 里的 schema 为准），然后按 KB 的规则写评测卡片；
   - 模型选型的结论仍然记在 KB，lite-eval 只负责算出数字。
@@ -767,6 +767,20 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
       - 预热抛出带用量的 `TargetError` 时费用丢失。
     - 不采纳 1 条：“差值和波动都为 0 时也该报 `within_noise`”。只跑一次的运行波动总是 0，这样每次打平都会警告，没有信息量；§18.1 已写明只在波动 > 0 时警告。
     - Codex 说的三处覆盖缺口，有两处已经有测试：阈值正好相等由 `test_a_drop_within_max_drop_passes` 覆盖，id 去重和退回用 doc 由 `test_relevance_mode_metric_values`、`test_relevance_mode_prefers_a_hit_id_over_its_doc` 覆盖；第三处（出错路径上的 teardown）已随上面的修复补上测试。
+- **E2b 迁移 lite-rag（2026-11-14，lite-rag 仓库，作为 lite-rag 的 S12）**：
+  - 依赖规则改了（AGENTS 规则 13，owner 2026-11-14 定，`b1a49a9`）：运行时依赖声明版本区间，下限是测试通过的最旧版本，由 CI 任务 `lowest` 检查，上限是下一个大版本；`uv.lock` 仍锁精确版本。起因：lite-rag 的 docling extra 要求 typer < 0.28，和精确的 `typer==0.29.1` 解析不出来。
+  - 做了什么：
+    - lite-rag 加可选 extra `eval`，按提交锁定 lite-eval（`b1a49a9`）；`src/lite_rag/eval.py` 改写成适配器 `LiteRagTarget`（§5.3），删掉自写的 `judge`、`metrics`、`_norm`、`_nearest_rank`、`run_configs` 和 `eval/crosscheck_ranx.py`。
+    - `literag eval` 参数和表格不变，另加 `--root`、`--crosscheck`；金标集和语料转成 lite-eval 数据集，每个配置一次 lite-eval 运行，表格下打印每个运行的状态和警告；lite-eval 的错误在 CLI 里是一行错误、退出码 1。
+    - 同一索引的配置共用一次 setup（§18.18）；setup 不计时地算好查询向量；每个运行在 `target.info.latency_scope` 记下延迟口径。
+  - 验证（§18.16 两层）：
+    - 评分器：2000 组随机命中喂给冻结的旧 `judge`（`tests/legacy_eval.py`）和 lite-eval 的评分器，逐题排名相同；
+    - 端到端：同一进程、同一 store，4 套金标集逐题 `answer_rank`、`doc_rank` 相同，整体和按 `kind` 分组的四个指标误差 ≤ 1e-9（FakeEmbedder 进 CI；bge-m3 用 `-m ollama`，本地通过）；
+    - 本机真实运行三个配置，和 lite-rag S5 基线逐项相同；
+    - lite-rag pytest 480 passed，改坏脚本 19/19 变红。
+  - /simplify 和 Codex 的结论记在 lite-rag 设计的 S12 实现说明里。和 lite-eval 有关的不采纳项：
+    - 不公开 `run_suite(targets=…)`：lite-rag 直接用 `runner.execute`（它的 target 共用一个 store 和 embedder，`python: module:factory` 表达不了）；等第二个使用方再定公开 API，在此之前 lite-rag 按提交锁定，每次升级跑等价测试；
+    - lite-eval 不在 setup 失败后调用 teardown：那要改 Target 协议；setup 可能半途失败的适配器在 setup 里自己清理（lite-rag 就这么做）。
 
 ## 17. 已定的开工问题（2026-11-13）
 
