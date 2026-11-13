@@ -30,11 +30,12 @@ _MARK_TAIL = r"(?!«redacted)"  # never re-redact a marker
 
 # Each pattern has a `pre` group (kept) and a `secret` group (replaced by the marker).
 _CONNECTION = (
-    # scheme://user:PASSWORD@
+    # scheme://user:PASSWORD@host — the password may hold an unencoded '@' or '/', so it runs to
+    # the '@' that is followed by a host and then a delimiter or the end.
     re.compile(
         r"(?P<pre>\b[a-zA-Z][a-zA-Z0-9+.-]*://[^\s:/@]*:)"
         + _MARK_TAIL
-        + r"(?P<secret>[^\s@/]+)(?=@)"
+        + r"(?P<secret>\S+?)(?=@[^\s@/?#]+(?:[/?#\s]|$))"
     ),
     # ?sslpassword=VALUE&
     re.compile(

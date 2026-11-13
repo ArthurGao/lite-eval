@@ -31,8 +31,13 @@ K = "«redacted:api_keys»"
         ),
         ("PGPASSWORD=pa&ss psql -h db", f"PGPASSWORD={R} psql -h db"),
         ('db_password = "x y" ok', f"db_password = {R} ok"),
-        # No password: unchanged.
+        # Unencoded '@' and '/' inside the password: the whole password goes, up to the host.
+        ("postgresql://app:p@ss@db:5432/x", f"postgresql://app:{R}@db:5432/x"),
+        ("postgresql://app:a/b@db/x ok", f"postgresql://app:{R}@db/x ok"),
+        ("redis://:pw@cache", f"redis://:{R}@cache"),
+        # No password: unchanged; a port is not a password.
         ("postgresql://app@db/x", "postgresql://app@db/x"),
+        ("https://example.com:8080/path?q=1", "https://example.com:8080/path?q=1"),
     ],
 )
 def test_connection_strings(text: str, expected: str) -> None:
