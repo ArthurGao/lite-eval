@@ -9,11 +9,17 @@ from typing import Annotated, NoReturn
 import typer
 
 from lite_eval import __version__
+from lite_eval.api import compare_runs, gate_results
 from lite_eval.errors import LiteEvalError
-from lite_eval.report.terminal import render_run
+from lite_eval.report.terminal import render_comparison, render_gate, render_run
 from lite_eval.runner import RunResult, rescore_run, run_suite
+from lite_eval.store import load_run, set_baseline
 
 app = typer.Typer(name="lite-eval", no_args_is_help=True, add_completion=False)
+baseline_app = typer.Typer(
+    no_args_is_help=True, help="Set the run a suite compares and gates against."
+)
+app.add_typer(baseline_app, name="baseline")
 
 
 def _print_version(value: bool) -> None:
@@ -37,12 +43,22 @@ def main(
     """lite-eval: did this change make the system better or worse, and can we trust that?"""
 
 
-def _finish(results: list[RunResult]) -> None:
+def _finish(results: list[RunResult], gate: bool = False) -> None:
+    """Exit codes in the order of design §18.4: 3 run failed, then 1 gate failed, else 0."""
     for r in results:
         typer.echo(render_run(r.record, str(r.directory)))
     if any(r.record.status == "failed" for r in results):
         typer.echo("run failed: no case was scored", err=True)
         raise typer.Exit(3)
+    if gate:
+        try:
+            outcomes = gate_results(results)
+        except LiteEvalError as exc:
+            _fail(exc)
+        for o in outcomes:
+            typer.echo(render_gate(o))
+        if not all(o.passed for o in outcomes):
+            raise typer.Exit(1)
 
 
 def _fail(exc: LiteEvalError) -> NoReturn:
@@ -64,13 +80,28 @@ def run(
     root: Annotated[
         Path | None, typer.Option(help="Evaluation root (default from the suite).")
     ] = None,
+    gate: Annotated[
+        bool, typer.Option("--gate", help="Evaluate the suite's gate; exit 1 when it fails.")
+    ] = False,
+    crosscheck: Annotated[
+        bool,
+        typer.Option("--crosscheck", help="Recompute ranking metrics with ranx; warn on a gap."),
+    ] = False,
 ) -> None:
     """Generate outputs, score them and write one run directory per config."""
     try:
-        results = run_suite(suite, config=config, no_cache=no_cache, ci=ci, root=root)
+        results = run_suite(
+            suite,
+            config=config,
+            no_cache=no_cache,
+            ci=ci,
+            root=root,
+            gate=gate,
+            crosscheck=crosscheck,
+        )
     except LiteEvalError as exc:
         _fail(exc)
-    _finish(results)
+    _finish(results, gate=gate)
 
 
 @app.command()
@@ -86,3 +117,30 @@ def rescore(
     except LiteEvalError as exc:
         _fail(exc)
     _finish([result])
+
+
+@app.command()
+def compare(
+    baseline: Annotated[Path, typer.Argument(help="Baseline run directory.")],
+    candidate: Annotated[Path, typer.Argument(help="Candidate run directory.")],
+) -> None:
+    """Pair two runs case by case: deltas, significance and the cases that changed."""
+    try:
+        comparison = compare_runs(baseline, candidate)
+    except LiteEvalError as exc:
+        _fail(exc)
+    typer.echo(render_comparison(comparison))
+
+
+@baseline_app.command("set")
+def baseline_set(
+    run_dir: Annotated[Path, typer.Argument(help="A finished run directory.")],
+) -> None:
+    """Make this run its suite's baseline (written to <root>/baselines.yaml)."""
+    try:
+        stored = load_run(run_dir)
+        path = set_baseline(stored)
+    except LiteEvalError as exc:
+        _fail(exc)
+    typer.echo(f"baseline of {stored.record.suite.name}: {stored.record.run_id} ({path})")
+    typer.echo(f"commit {run_dir} and {path.name} with the code they gate (design §17)")

@@ -14,10 +14,11 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import Any
 
-from lite_eval.contracts import Case, Output, Score
+from lite_eval.contracts import Case, Output, Score, Verdict
 from lite_eval.errors import ConfigError
 from lite_eval.scorers.base import Scorer, Spec, safe_score, spec_name
 from lite_eval.scorers.deterministic import deterministic
+from lite_eval.scorers.ranking import rank_scorer
 
 _COMPOSITES = ("all_of", "any_of", "weighted")
 
@@ -42,6 +43,12 @@ class Composite:
     @cached_property
     def name(self) -> str:
         return spec_name(self.spec)
+
+    @property
+    def verdict(self) -> Verdict:
+        if self.op == "weighted":
+            return "none"
+        return "value" if all(c.verdict == "value" for c in self.children) else "separate"
 
     @cached_property
     def version(self) -> str:
@@ -88,13 +95,18 @@ def _composite(op: str, items: Any) -> Composite:
     return Composite(op, children, weights)
 
 
+def _leaf(kind: str, params: dict[str, Any]) -> Scorer:
+    ranked = rank_scorer(kind, params)
+    return ranked if ranked is not None else deterministic(kind, params)
+
+
 def build_scorer(spec: Any) -> Scorer:
     if isinstance(spec, str):
-        return deterministic(spec, {})
+        return _leaf(spec, {})
     if not isinstance(spec, dict) or not spec:
         raise ConfigError(f"invalid scorer spec {spec!r}")
     if "name" in spec:
-        return deterministic(str(spec["name"]), {k: v for k, v in spec.items() if k != "name"})
+        return _leaf(str(spec["name"]), {k: v for k, v in spec.items() if k != "name"})
     if len(spec) != 1:
         raise ConfigError(f"scorer spec must have `name` or exactly one key: {spec!r}")
     ((key, value),) = spec.items()
@@ -102,7 +114,7 @@ def build_scorer(spec: Any) -> Scorer:
         return _composite(key, value)
     if not isinstance(value, dict):
         raise ConfigError(f"scorer {key!r}: params must be a mapping, got {value!r}")
-    return deterministic(key, value)
+    return _leaf(key, value)
 
 
 def parse_scorer_id(text: str) -> Spec:

@@ -1,0 +1,6 @@
+name: brewing
+version: "1"
+pack: retrieval
+description: Four questions over two self-written brewing notes.
+license: CC0-1.0
+synthetic: true

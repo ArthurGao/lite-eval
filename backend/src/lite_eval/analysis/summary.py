@@ -15,22 +15,29 @@ from lite_eval.contracts import Case, MetricSummary, Output, RunSummary, Score
 PASS_RATE = ":pass_rate"
 
 
-def _metric_values(
-    scores: Sequence[Score], scorer: str, cases: Sequence[Case], repeats: int
+def metric_values(
+    scores: Sequence[Score],
+    scorer: str,
+    case_ids: Sequence[str],
+    repeats: int,
+    pass_rate: bool = False,
 ) -> dict[str, dict[str, list[float]]]:
-    """metric -> case id -> [value per repeat] for one scorer; absent repeats are 0."""
-    value = {c.id: [0.0] * repeats for c in cases}
-    passed = {c.id: [0.0] * repeats for c in cases}
-    has_pass = False
+    """metric -> case id -> [value per repeat] for one scorer; absent repeats are 0.
+
+    Metrics: the scorer's name (its values) and, when the scorer declares a pass rate,
+    `<name>:pass_rate` (a failed or missing repeat counts as not passed). Whether a metric
+    exists is the scorer's declaration, never inferred from the data, so one scorer always
+    yields the same metrics.
+    """
+    value = {cid: [0.0] * repeats for cid in case_ids}
+    passed = {cid: [0.0] * repeats for cid in case_ids}
     for s in scores:
         if s.scorer != scorer or s.case_id not in value or s.repeat >= repeats:
             continue
         value[s.case_id][s.repeat] = s.value
-        if s.passed is not None:
-            has_pass = True
-            passed[s.case_id][s.repeat] = float(s.passed)
+        passed[s.case_id][s.repeat] = float(s.passed is True)
     out = {scorer: value}
-    if has_pass:
+    if pass_rate:
         out[scorer + PASS_RATE] = passed
     return out
 
@@ -41,12 +48,15 @@ def summarize(
     scorers: Sequence[str],
     outputs: Sequence[Output],
     scores: Sequence[Score],
+    pass_rate: frozenset[str] = frozenset(),
 ) -> RunSummary:
     n = len(cases)
     metrics: dict[str, MetricSummary] = {}
     groups: dict[str, dict[str, dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
     for scorer in scorers:
-        for metric, per_case in _metric_values(scores, scorer, cases, repeats).items():
+        for metric, per_case in metric_values(
+            scores, scorer, [c.id for c in cases], repeats, pass_rate=scorer in pass_rate
+        ).items():
             case_mean = {cid: fmean(v) for cid, v in per_case.items()}
             per_repeat = [fmean(per_case[c.id][r] for c in cases) for r in range(repeats)]
             metrics[metric] = MetricSummary(

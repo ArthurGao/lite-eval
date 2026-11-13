@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import yaml
 from pydantic import BaseModel, ValidationError
 
 from lite_eval.contracts import Output, RunRecord, Score
@@ -41,11 +42,22 @@ def write_run(
 class StoredRun:
     directory: Path
     record: RunRecord
-    outputs: list[Output]
+    outputs: list[Output]  # empty when loaded with outputs=False
     scores: list[Score]
 
+    @property
+    def root(self) -> Path:
+        return root_of(self.directory)
 
-def load_run(directory: Path) -> StoredRun:
+
+def root_of(run_directory: Path) -> Path:
+    """The evaluation root of a run directory: <root>/runs/<suite>/<run_id>."""
+    return run_directory.parents[2]
+
+
+def load_run(directory: Path, *, outputs: bool = True) -> StoredRun:
+    """A finished run. `outputs=False` skips outputs.jsonl (the largest file) for callers that
+    need only the record and the scores, such as comparisons and gates."""
     run_json = directory / "run.json"
     if not run_json.is_file():
         raise ConfigError(f"not a finished run directory (no run.json): {directory}")
@@ -53,9 +65,9 @@ def load_run(directory: Path) -> StoredRun:
         record = RunRecord.model_validate_json(run_json.read_bytes())
     except ValidationError as exc:
         raise ConfigError(f"{run_json}: {exc}") from exc
-    outputs = read_jsonl(directory / "outputs.jsonl", Output)
+    stored_outputs = read_jsonl(directory / "outputs.jsonl", Output) if outputs else []
     seen: set[tuple[str, int]] = set()
-    for o in outputs:
+    for o in stored_outputs:
         if (o.case_id, o.repeat) in seen:
             raise ConfigError(
                 f"{directory}: duplicate output for case {o.case_id!r} repeat {o.repeat}"
@@ -64,6 +76,48 @@ def load_run(directory: Path) -> StoredRun:
     return StoredRun(
         directory=directory,
         record=record,
-        outputs=outputs,
+        outputs=stored_outputs,
         scores=read_jsonl(directory / "scores.jsonl", Score),
     )
+
+
+# ---------------------------------------------------------------- baselines (design §12)
+
+BASELINES = "baselines.yaml"
+
+
+def runs_dir(root: Path) -> Path:
+    return root / "runs"
+
+
+def read_baselines(root: Path) -> dict[str, str]:
+    """suite name -> run_id of its baseline."""
+    path = root / BASELINES
+    if not path.exists():
+        return {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in data.items()
+    ):
+        raise ConfigError(f"{path}: expected a mapping of suite name to run_id")
+    return data
+
+
+def baseline_run(root: Path, suite: str) -> StoredRun | None:
+    run_id = read_baselines(root).get(suite)
+    if run_id is None:
+        return None
+    directory = runs_dir(root) / suite / run_id
+    if not directory.is_dir():
+        raise ConfigError(f"baseline {run_id} of suite {suite!r} is not in {runs_dir(root)}")
+    return load_run(directory, outputs=False)
+
+
+def set_baseline(stored: StoredRun) -> Path:
+    """Make a finished run its suite's baseline; returns the baselines file."""
+    root = stored.root
+    baselines = read_baselines(root)
+    baselines[stored.record.suite.name] = stored.record.run_id
+    path = root / BASELINES
+    atomic_write(path, yaml.safe_dump(dict(sorted(baselines.items())), sort_keys=False))
+    return path

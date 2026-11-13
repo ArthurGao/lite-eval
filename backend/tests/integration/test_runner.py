@@ -68,12 +68,12 @@ def test_a_run_writes_an_immutable_record_with_its_provenance(tmp_path: Path) ->
     assert rec.suite.path == "suites/s.yaml"  # relative: no absolute local path in records
     assert [s.name for s in rec.scorers] == ["exact_match"]
     assert rec.summary.metrics["exact_match"].value == 1.0
-    assert rec.summary.metrics["exact_match:pass_rate"].value == 1.0
+    assert "exact_match:pass_rate" not in rec.summary.metrics  # binary: it would repeat the value
     assert rec.summary.outputs_expected == 3
     assert rec.summary.case_weight == pytest.approx(1 / 3)
     assert rec.summary.groups["kind"] == {
-        "fact": {"exact_match": 1.0, "exact_match:pass_rate": 1.0},
-        "math": {"exact_match": 1.0, "exact_match:pass_rate": 1.0},
+        "fact": {"exact_match": 1.0},
+        "math": {"exact_match": 1.0},
     }
     assert [o.case_id for o in stored.outputs] == ["q1", "q2", "q3"]
     assert (target.setups, target.teardowns) == (1, 1)
@@ -217,7 +217,8 @@ def test_transport_errors_are_retried_with_capped_backoff(tmp_path: Path) -> Non
     assert outputs["q2"].error.message.startswith("transport error after 3 retries")
     assert (target.calls["q1"], target.calls["q2"]) == (3, 4)
     assert sleeps.calls == [0.5, 1.0, 0.5, 1.0, 2.0]
-    assert result.record.cost.calls == 3 + 4 + 1
+    assert result.record.cost.calls == 1 + 3 + 4 + 1  # the warm-up call, then q1, q2, q3
+    assert target.warmups == 1
 
 
 def test_backoff_exponent_is_capped() -> None:
@@ -229,7 +230,8 @@ def test_backoff_exponent_is_capped() -> None:
 
 
 def test_max_calls_stops_the_run_as_partial(tmp_path: Path) -> None:
-    (result,) = run(tmp_path, [("a", FakeTarget())], budget={"max_calls": 2}, concurrency=1)
+    # 3 calls: the warm-up (design §18.18 charges it to the budget), then two cases.
+    (result,) = run(tmp_path, [("a", FakeTarget())], budget={"max_calls": 3}, concurrency=1)
 
     assert result.record.status == "partial"
     assert result.record.summary.outputs_recorded == 2
@@ -246,8 +248,8 @@ def test_max_cost_stops_once_spent_exceeds_it(tmp_path: Path) -> None:
         tmp_path, [("a", target)], cases=FIVE_CASES, budget={"max_cost_usd": 0.5}, concurrency=1
     )
 
-    # 0.25 and 0.5 are not over 0.5, so a third call is made; after it 0.75 is.
-    assert sum(target.calls.values()) == 3
+    # The warm-up spends 0.25; 0.25 and 0.5 are not over 0.5, so two cases run; then 0.75 is.
+    assert (target.warmups, sum(target.calls.values())) == (1, 2)
     assert result.record.status == "partial"
 
 
@@ -466,9 +468,11 @@ def test_a_cache_hit_is_redacted_with_the_current_rules(tmp_path: Path) -> None:
 
 def test_the_budget_is_shared_by_every_config_of_the_suite(tmp_path: Path) -> None:
     a, b = FakeTarget(config={"k": 1}), FakeTarget(config={"k": 2})
-    results = run(tmp_path, [("a", a), ("b", b)], budget={"max_calls": 4}, concurrency=1)
+    # 6 calls: a's warm-up and 3 cases, then b's warm-up and 1 case.
+    results = run(tmp_path, [("a", a), ("b", b)], budget={"max_calls": 6}, concurrency=1)
 
     assert sum(a.calls.values()) + sum(b.calls.values()) == 4
+    assert (a.warmups, b.warmups) == (1, 1)
     assert [r.record.status for r in results] == ["complete", "partial"]
 
 
@@ -493,8 +497,8 @@ def test_a_transport_failure_on_the_last_budgeted_call_is_recorded(tmp_path: Pat
     sleeps = Sleeps()
     target = FakeTarget(steps={"q1": Step(transport_failures=9)})
     (result,) = run(
-        tmp_path, [("a", target)], RunOptions(sleep=sleeps), budget={"max_calls": 1}, concurrency=1
-    )
+        tmp_path, [("a", target)], RunOptions(sleep=sleeps), budget={"max_calls": 2}, concurrency=1
+    )  # the warm-up, then q1's single allowed call
 
     outputs = load_run(result.directory).outputs
     assert [(o.case_id, o.error.kind if o.error else None) for o in outputs] == [
@@ -506,6 +510,22 @@ def test_a_transport_failure_on_the_last_budgeted_call_is_recorded(tmp_path: Pat
 
 def test_max_calls_is_exact_under_concurrency(tmp_path: Path) -> None:
     target = FakeTarget(default=Step(delay_s=0.02))
-    run(tmp_path, [("a", target)], budget={"max_calls": 1}, concurrency=4)
+    run(tmp_path, [("a", target)], budget={"max_calls": 2}, concurrency=4)  # warm-up + 1
 
-    assert sum(target.calls.values()) == 1
+    assert (target.warmups, sum(target.calls.values())) == (1, 1)
+
+
+def test_a_scorer_with_a_partial_value_also_reports_its_pass_rate(tmp_path: Path) -> None:
+    cases = [{"id": "k1", "input": "x", "expected": [["shanghai"], ["acme"]]}]
+    target = FakeTarget(steps={"k1": Step(value="lives in shanghai", echo_expected=False)})
+    (result,) = run(tmp_path, [("a", target)], cases=cases, scorers=["keywords"])
+
+    m = result.record.summary.metrics
+    assert (m["keywords"].value, m["keywords:pass_rate"].value) == (0.5, 0.0)
+
+
+def test_a_composite_of_binary_scorers_is_binary_too(tmp_path: Path) -> None:
+    both = {"all_of": ["exact_match", "contains"]}
+    (result,) = run(tmp_path, [("a", FakeTarget())], scorers=[both])
+
+    assert list(result.record.summary.metrics) == ['{"all_of":["exact_match","contains"]}']

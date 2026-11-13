@@ -1,0 +1,4 @@
+{"id": "b1", "input": {"query": "how much coffee per gram of water"}, "expected": {"doc": "coffee", "evidence": "1 gram of coffee to 16 grams of water"}, "tags": {"kind": "keyword"}}
+{"id": "b2", "input": {"query": "why wait after the first pour bloom"}, "expected": {"doc": "coffee", "evidence": "release carbon dioxide during this bloom"}, "tags": {"kind": "paraphrase"}}
+{"id": "b3", "input": {"query": "how long to steep green tea"}, "expected": {"doc": "tea", "evidence": "two to three minutes"}, "tags": {"kind": "keyword"}}
+{"id": "b4", "input": {"query": "why is my green tea bitter boiling"}, "expected": {"doc": "tea", "evidence": "scalds green tea leaves"}, "tags": {"kind": "paraphrase"}}

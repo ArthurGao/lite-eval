@@ -509,11 +509,11 @@ redact: [connection_strings, api_keys]
 ### 11.2 CLI（`lite-eval`）
 
 ```
-lite-eval run <suite.yaml> [--config NAME] [--no-cache] [--gate] [--ci]
+lite-eval run <suite.yaml> [--config NAME] [--no-cache] [--gate] [--crosscheck] [--ci]
 lite-eval rescore <run> [--scorer …]          # 只重跑打分
 lite-eval compare <baseline> <candidate>
 lite-eval triage <run>                        # 在终端里逐条归类 miss
-lite-eval baseline set <suite> <run>
+lite-eval baseline set <run>                  # 运行记录里有 suite 名
 lite-eval view [--port 8720]
 lite-eval report --html <run | baseline..candidate> -o out.html
 lite-eval export kb <run>                     # KB results.jsonl 的行（§13）
@@ -736,6 +736,37 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
       - `token=abc}` 会把右括号一起替换掉；
       - 运行目录里重复的输出会悄悄覆盖，改为读取时拒绝。
     - 不采纳 1 条（“并发时 `max_calls` 会被超出”）：检查预算和计数之间没有 `await`，asyncio 是单线程的，不会被插进来。加了 `test_max_calls_is_exact_under_concurrency` 证明这一点。
+- **E2a 检索 pack、对比、门禁（2026-11-14，lite-eval 仓库）**：E2 分两片：E2a 在 lite-eval 里做，E2b 迁移 lite-rag。
+  - 做了什么：
+    - pack 注册表和 retrieval pack；检索评分器 `hit@k`、`doc_hit@k`、`mrr@k`、`ndcg@k`、`recall@k`，证据句判定和 lite-rag 的 `judge` / `_norm` 逐字一致，和 ranx 0.3.21 交叉核对，并提供 `--crosscheck`。
+    - setup 共享和预热（§18.18）。
+    - 对比（McNemar、bootstrap、可比性、`within_noise`）；门禁、baseline；`compare`、`baseline set`、`run --gate` 命令，以及 `assert_gate`。
+    - 契约只加字段：`RunRecord.case_hashes`、`ScorerRef.verdict`、`Comparison` 等，`RunRecord.gate` 改为有类型的 `GateSpec`。
+    - 新增 §18.21 记录接入细节；`backend/examples/` 加了一个检索示例。
+  - 验证：
+    - pytest 244 passed；改坏脚本 E2a 43/43、E1 64/64 都变红。
+    - 手动用检索示例走了一遍：两个配置 → `compare` → `baseline set` → `run --gate`，退出码 0 和 1 都按预期。
+  - 实现中发现并修掉的 bug（都先写失败的测试）：
+    - 降幅正好等于 `max_drop` 时浮点误差会判失败，改为留 1e-9 容差；
+    - 二值评分器的 `:pass_rate` 和值重复；
+    - 通过率按数据推断，导致 MRR 有一个出错用例就冒出无意义的 `:pass_rate`，改为评分器声明。
+  - /simplify（四个审查）：
+    - 3 个 bug：
+      - compare 从值去猜二值，连续指标在小数据集上全是 0/1 时选错检验，改为记录 `verdict`；
+      - cost 指标的相对门禁要等运行花完钱才报错，改为加载 Suite 时拒绝；
+      - 门禁可比性规则写了两份且已不一致，合成一个 `gate_problems`。
+    - 采纳的改进：bootstrap 改为差值重抽样并分块（固定种子的结果先钉住，改完不变）；门禁直接用 runner 手里的分数，baseline 只读一次且跳过 `outputs.jsonl`；检索指标两种模式一套公式；`normalise` 加缓存；交叉核对和记录里的值比；`assert_gate` 复用终端格式；`root_of`；测试辅助函数合并。
+    - 未采纳：
+      - `warming_up` 上下文变量留在协议里（已写进文档）；
+      - `share_setup_from` 暂不单独抽成子协议；
+      - ranx 不合并成一次调用：`--crosscheck` 是可选诊断；
+      - 不按评分器预先分组分数：规模内省不了多少时间。
+  - Codex：
+    - 采纳 2 条，都先写了失败的测试：
+      - follower 的 teardown 抛错会跳过 leader，并顶替掉原来的错误；
+      - 预热抛出带用量的 `TargetError` 时费用丢失。
+    - 不采纳 1 条：“差值和波动都为 0 时也该报 `within_noise`”。只跑一次的运行波动总是 0，这样每次打平都会警告，没有信息量；§18.1 已写明只在波动 > 0 时警告。
+    - Codex 说的三处覆盖缺口，有两处已经有测试：阈值正好相等由 `test_a_drop_within_max_drop_passes` 覆盖，id 去重和退回用 doc 由 `test_relevance_mode_metric_values`、`test_relevance_mode_prefers_a_hit_id_over_its_doc` 覆盖；第三处（出错路径上的 teardown）已随上面的修复补上测试。
 
 ## 17. 已定的开工问题（2026-11-13）
 
@@ -759,7 +790,7 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
 - **运行级指标**：先算每个用例的值，再对所有用例取平均。排名指标（hit@k、MRR）先按每次重复分别算，再按用例取平均。
 - **波动**：每次重复分别算一遍运行级指标，报告最小值、最大值和均值。
 - **对比时重复次数不同**：用每个用例的均值配对，这时一律用 bootstrap（§18.2），不用 McNemar。
-- **波动警告**：两次运行中，只要有一方的运行级指标波动范围（最大值 − 最小值）大于等于两者均值之差，就给出 `within_noise` 警告。
+- **波动警告**：两次运行中，只要有一方的运行级指标波动范围（最大值 − 最小值）大于 0、并且大于等于两者均值之差，就给出 `within_noise` 警告。波动为 0 时不警告：只跑一次的运行波动总是 0，和 baseline 打平时警告不提供任何信息（E2 Codex 审查讨论后定）。
 
 ### 18.2 显著性检验
 
@@ -1030,8 +1061,9 @@ runner 开始时会把要执行的命令或 URL 打印出来。
   1. 组内第一个配置（leader）调用 `setup(dataset)`；
   2. 其余配置（follower）如果实现了 `share_setup_from(leader)`，就调用它接过 leader 的 setup；没实现的，各自调用 `setup(dataset)`，并给出 `setup_not_shared` 警告（结果仍然正确，只是慢）；
   3. 每个配置跑完自己的用例后，先 teardown follower；组内全部跑完，最后 teardown leader。
+  4. 每个 Target 都尝试 teardown，一个失败不影响后面的。运行已经出错时，teardown 的失败作为附注挂在原来的错误上，不顶替它；运行没出错时，teardown 失败报为 `RunError`（退出码 3）。
 - **只读**：共享的 setup 在 `run` 期间只读。会修改共享状态的 Target（例如记忆系统在 `run` 里写入）不能共享：`setup_identity()` 必须包含配置名，让它自成一组。
-- **预热**：每个配置在 setup 之后、计时之前，对按 id 排序的第一个用例调用一次 `run`，结果丢弃：不进缓存、不进 `outputs.jsonl`、不算延迟；调用次数和费用照样计入预算和 `cost`（L6）。缓存全部命中、不需要调用 Target 时，不做预热。
+- **预热**：每个配置在 setup 之后、计时之前，对按 id 排序的第一个用例调用一次 `run`，结果丢弃：不进缓存、不进 `outputs.jsonl`、不算延迟；调用次数和费用照样计入预算和 `cost`（L6），预热抛出带用量的 `TargetError` 时这笔用量也算。缓存全部命中、不需要调用 Target 时，不做预热。
 
 ### 18.19 门禁语义
 
@@ -1079,3 +1111,30 @@ runner 开始时会把要执行的命令或 URL 打印出来。
   - 读运行目录时，同一个 `(case_id, repeat)` 出现两次就拒绝（退出码 2）：被改过的记录不能悄悄得出一个错的汇总。
   - 新 run 的 `cost.calls` 为 0，`cache` 清零，`rescored_from` 指向原 run。
   - `--scorer` 可以重复给，写法是名字或 JSON（Suite 写法或记录里的写法都行）。
+
+### 18.21 检索 pack、对比、门禁的接入（E2 定）
+
+- **检索评分器**：
+  - 输出约定：`value`（或 `field` 指向的部分）是按名次排好的命中列表 `[{doc, text, id?}]`。
+  - `expected` 有两种：证据句模式 `{doc, evidence}`，判定和 lite-rag 的 `judge`、`_norm` 逐字一致（§18.16）；相关集合模式 `{relevant: [ids]}`，命中的 id 取 `id`，没有就取 `doc`，重复的 id 只算第一次出现，和 ranx 看到的一样。
+  - 评分器名是 `<指标>@<k>`：`hit`、`doc_hit`、`mrr`、`ndcg`、`recall`。每个用例的分数就是这个指标在这一题上的值，所以运行级指标就是各题均值，汇总、分组、对比都走通用路径。证据句模式下只有一个相关项，`recall@k` 等于 `hit@k`。
+  - retrieval pack 默认 `hit@1, hit@3, hit@5, mrr@10, doc_hit@5`；相关集合模式通常再加 `ndcg@10, recall@10`。
+- **评分器声明 `verdict`**（写进 `ScorerRef.verdict`，E2 加的字段）：
+  - `value`：值是 1 当且仅当通过（`exact_match`、`contains`、`regex`、`must_not`、`hit@k`、`doc_hit@k`，以及子评分器全是 `value` 的 `all_of`、`any_of`）。不单列 `:pass_rate`，它只会重复值。
+  - `separate`：值是比例，另有通过与否（`keywords`、`set_recall`、`set_precision`，其他 `all_of`、`any_of`）。有 `:pass_rate` 指标。
+  - `none`：没有通过与否（`mrr@k`、`ndcg@k`、`recall@k`、`weighted`）。
+  - 有没有 `:pass_rate`、对比用 McNemar 还是 bootstrap、逐用例变化叫“退步 / 修好”还是“变化”，都只看这个声明，不从某次运行碰巧得到的值去猜：连续指标在小数据集上恰好全是 0 或 1 时，从值去猜会选错检验（E2 审查发现）。E2 之前的记录没有这个字段，才退回看值。
+- **对比**：
+  - `RunRecord.case_hashes` 记每个用例的哈希（E2 加的字段；E1 的记录没有，不能参与对比，要重新生成）。
+  - McNemar 用整数精确计算（不依赖 scipy）；bootstrap 对逐用例差值重抽样，用 numpy 的 `default_rng(种子)`，每次抽 1000 行（和一次抽 10000 行读到的随机数顺序相同，内存只要十分之一），区间用 `numpy.percentile` 的默认（线性插值）百分位。numpy 是核心依赖。
+  - 逐用例变化：所有变差的用例在前（降幅大的先列），然后是变好的。
+- **门禁**：
+  - Suite 里 `gate` 可以写成规则列表（§8.4 的写法），也可以写成 `{rules: [...], allow_partial, allow_partial_overlap}`。
+  - 规则二选一：`min` / `max`，或者 `compare_to: baseline` 加 `max_drop`（可选 `require_significant`）。`latency_p50`、`latency_p95`、`cost_usd` 取自 cost 汇总，越小越好，用 `max`；对它们写相对规则在加载 Suite 时就报错（否则要等运行花完钱才发现）。
+  - `RunRecord.gate` 记的是有类型的 `GateSpec`（E1 记录里是 `null`，照样能读）。
+  - 门禁能不能用（指标是否存在、baseline、数据集、`partial_overlap`、评分器版本）由同一个函数 `analysis.gate.gate_problems` 判断：运行前用 Suite 声明的东西调一次，运行后用记录里的东西再调一次，两边不会不一致。
+  - 所有阈值比较留 1e-9 的容差：降幅正好等于 `max_drop` 时，0.95 − 1.0 在浮点数里是 −0.050000000000000044，不能因此判失败。
+  - `--gate` 先做配置检查（门禁不存在、指标不是评分器给出的、缺 baseline、数据集名不同、`partial_overlap` 未允许、评分器版本不同），全部在调用 Target 之前，退出码 2；然后运行，有运行一个都没打分就退出码 3；最后判门禁，失败退出码 1。
+  - `lite-eval baseline set <run>` 写 `<root>/baselines.yaml`（suite 名 → run_id），并提示把运行目录和这个文件一起提交（§17）。
+- **setup 共享**：Target 可以实现 `share_setup_from(leader)`；预热时 runner 把上下文变量 `lite_eval.targets.base.warming_up` 设为真，Target 可以据此不把预热算进自己的统计。
+- **`--crosscheck`**：对每个检索评分器，从每个分数的 evidence 里取出名次，用 ranx 0.3.21 重算（每次重复分别算再平均），和 lite-eval 的值相差超过 1e-9 就给 `crosscheck_mismatch` 警告；没装 `[ranking]` extra 时报配置错误。

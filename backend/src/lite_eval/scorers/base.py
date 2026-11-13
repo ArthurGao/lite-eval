@@ -8,7 +8,7 @@ spec as canonical JSON, or the bare name; `rescore` rebuilds a scorer from it.
 from typing import Any, Protocol
 
 from lite_eval.canonical import canonical_json
-from lite_eval.contracts import Case, Output, Score, ScoreError
+from lite_eval.contracts import Case, Output, Score, ScoreError, Verdict
 
 Spec = str | dict[str, Any]
 
@@ -22,6 +22,11 @@ class Scorer(Protocol):
 
     @property
     def version(self) -> str: ...
+
+    @property
+    def verdict(self) -> Verdict:
+        """How the scorer judges (contracts.Verdict): decides pass rates and the test."""
+        ...
 
     def score(self, case: Case, output: Output) -> Score: ...
 

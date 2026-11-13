@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 # `run(case)` call. A target that seeds or varies by repeat reads it; the protocol stays
 # `run(case)`.
 current_repeat: ContextVar[int] = ContextVar("lite_eval_current_repeat", default=0)
+# True during the untimed warm-up call (design §18.18), whose output is discarded.
+warming_up: ContextVar[bool] = ContextVar("lite_eval_warming_up", default=False)
 
 
 @runtime_checkable

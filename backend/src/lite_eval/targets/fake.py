@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import JsonValue
 
 from lite_eval.contracts import Billing, Case, ErrorKind, Output, Span, Trace, Usage
-from lite_eval.targets.base import TargetError, TransportError, current_repeat
+from lite_eval.targets.base import TargetError, TransportError, current_repeat, warming_up
 
 if TYPE_CHECKING:
     from lite_eval.datasets.local import Dataset
@@ -42,6 +42,7 @@ class FakeTarget:
         deterministic: bool = True,
         setup_identity: dict[str, Any] | None = None,
         per_repeat: dict[tuple[str, int], Step] | None = None,
+        can_share_setup: bool = True,
     ) -> None:
         self.name = name
         self.steps = steps or {}
@@ -55,6 +56,11 @@ class FakeTarget:
         self.calls: Counter[str] = Counter()
         self.setups = 0
         self.teardowns = 0
+        self.warmups = 0
+        self.shared_from: FakeTarget | None = None
+        self.log: list[str] | None = None  # setup / share / teardown events, when given a list
+        if can_share_setup:
+            self.share_setup_from = self._share_setup_from
         self.in_flight = 0
         self.max_in_flight = 0
         self._attempts: Counter[tuple[str, int]] = Counter()
@@ -74,13 +80,28 @@ class FakeTarget:
     def setup_identity(self) -> dict[str, Any]:
         return dict(self._setup_identity)
 
+    def _event(self, what: str) -> None:
+        if self.log is not None:
+            self.log.append(f"{what}:{self._config.get('id', self.name)}")
+
     async def setup(self, dataset: "Dataset") -> None:
         self.setups += 1
+        self._event("setup")
+
+    async def _share_setup_from(self, leader: "FakeTarget") -> None:
+        self.shared_from = leader
+        self._event("share")
 
     async def teardown(self) -> None:
         self.teardowns += 1
+        self._event("teardown")
 
     async def run(self, case: Case) -> Output:
+        if warming_up.get():  # counted apart, so the per-case script is not consumed
+            self.warmups += 1
+            return Output(
+                case_id=case.id, value=case.expected, trace=Trace(usage=self.default.usage)
+            )
         self.calls[case.id] += 1
         repeat = current_repeat.get()
         step = self.per_repeat.get((case.id, repeat)) or self.steps.get(case.id) or self.default

@@ -2,9 +2,13 @@
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
+
+if TYPE_CHECKING:
+    from lite_eval.runner import RunOptions, RunResult
+    from lite_eval.targets.base import Target
 
 
 def write_dataset(
@@ -64,3 +68,26 @@ def write_suite(
     suite.parent.mkdir(parents=True, exist_ok=True)
     suite.write_text(yaml.safe_dump(body, allow_unicode=True), encoding="utf-8")
     return suite
+
+
+def hit(doc: str, text: str = "", hid: str | None = None) -> dict[str, Any]:
+    """One retrieval hit as a target returns it."""
+    return {"doc": doc, "text": text} | ({"id": hid} if hid else {})
+
+
+def execute_suite(
+    root: Path,
+    targets: "list[tuple[str, Target]]",
+    options: "RunOptions | None" = None,
+    **spec: Any,
+) -> "list[RunResult]":
+    """Write an evaluation root (write_suite) and run the given targets on it in-process."""
+    import asyncio
+
+    from lite_eval.datasets.local import load_dataset
+    from lite_eval.runner import RunOptions, execute
+    from lite_eval.suite import load_suite
+
+    suite = load_suite(write_suite(root, **spec))
+    dataset = load_dataset(suite.dataset_path)
+    return asyncio.run(execute(suite, dataset, targets, options or RunOptions()))

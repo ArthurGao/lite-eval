@@ -7,6 +7,7 @@ calls a target.
 """
 
 import asyncio
+import importlib.util
 import math
 import os
 import platform
@@ -19,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from lite_eval import __version__
+from lite_eval.analysis.gate import gate_problems
 from lite_eval.analysis.summary import summarize
 from lite_eval.cache import OutputCache, cache_key
 from lite_eval.canonical import content_hash
@@ -33,6 +35,7 @@ from lite_eval.contracts import (
     Output,
     RunRecord,
     RunStatus,
+    RunSummary,
     RunWarning,
     Score,
     ScorerRef,
@@ -47,9 +50,16 @@ from lite_eval.packs.cost import cost_summary
 from lite_eval.redact import Redactor, from_spec
 from lite_eval.scorers.base import Scorer, safe_score
 from lite_eval.scorers.compose import build_scorer, parse_scorer_id
-from lite_eval.store import load_run, new_run_id, write_run
+from lite_eval.scorers.ranking import RankScorer, ranx_value
+from lite_eval.store import baseline_run, load_run, new_run_id, runs_dir, write_run
 from lite_eval.suite import Budget, Suite, load_suite
-from lite_eval.targets.base import Target, TargetError, TransportError, current_repeat
+from lite_eval.targets.base import (
+    Target,
+    TargetError,
+    TransportError,
+    current_repeat,
+    warming_up,
+)
 from lite_eval.targets.python import build_target, load_factory
 
 Sleep = Callable[[float], Awaitable[None]]
@@ -66,12 +76,14 @@ class RunOptions:
     retry_base_s: float = 0.5
     retry_max_s: float = 8.0
     sleep: Sleep = asyncio.sleep
+    crosscheck: bool = False  # recompute ranking metrics with ranx (design §18.17)
 
 
 @dataclass(frozen=True)
 class RunResult:
     record: RunRecord
     directory: Path
+    scores: list[Score]  # as written to scores.jsonl
 
 
 def backoff_s(attempt: int, base: float, cap: float) -> float:
@@ -106,6 +118,7 @@ class _Generation:
     hits: int = 0
     misses: int = 0
     corrupt: int = 0
+    warmup_usage: list[Usage] = field(default_factory=list)  # charged, never recorded as output
 
 
 def _error_output(
@@ -228,8 +241,7 @@ class _Generator:
             )
         return None  # unreachable: the last attempt returns; kept for the type checker
 
-    async def _one(self, case: Case, repeat: int, gate: asyncio.Semaphore) -> Output | None:
-        current_repeat.set(repeat)  # this task's own context: the target can read it
+    def _lookup(self, case: Case, repeat: int) -> tuple[str, Output | None]:
         ident = self.identity
         key = cache_key(
             target=ident.name,
@@ -240,10 +252,40 @@ class _Generator:
             case_hash=self.dataset.case_hashes[case.id],
             repeat=repeat,
         )
-        cached: Output | None = None
-        if self.cache is not None and not self.options.no_cache:
-            cached, corrupt = self.cache.get(key)
-            self.state.corrupt += corrupt
+        if self.cache is None or self.options.no_cache:
+            return key, None
+        cached, corrupt = self.cache.get(key)
+        self.state.corrupt += corrupt
+        return key, cached
+
+    async def _warm_up(self, case: Case) -> None:
+        """Design §18.18: one untimed call before the timed ones; its output is discarded, its
+        call and cost are charged. A failure here is ignored: the real call records it."""
+        if self.ledger.exhausted():
+            return
+        self.ledger.calls += 1
+        self.state.calls += 1
+        current_repeat.set(0)
+        token = warming_up.set(True)
+        usage: Usage | None = None
+        try:
+            result = await asyncio.wait_for(self.target.run(case), self.suite.spec.timeout_s)
+            if isinstance(result, Output):
+                usage = result.trace.usage
+        except TargetError as exc:  # a failure that spent tokens is still charged
+            usage = exc.usage
+        except Exception:
+            pass
+        finally:
+            warming_up.reset(token)
+        if usage is not None:
+            self.state.warmup_usage.append(usage)
+            self.ledger.spent_usd += usage.cost_usd
+
+    async def _one(
+        self, case: Case, repeat: int, gate: asyncio.Semaphore, key: str, cached: Output | None
+    ) -> Output | None:
+        current_repeat.set(repeat)  # this task's own context: the target can read it
         if cached is not None:
             self.state.hits += 1
             raw = cached.model_copy(update={"case_id": case.id, "repeat": repeat})
@@ -263,8 +305,12 @@ class _Generator:
 
     async def run(self) -> _Generation:
         gate = asyncio.Semaphore(self.suite.spec.concurrency)
-        jobs = [(c, r) for c in self.dataset.cases for r in range(self.repeats)]
-        results = await asyncio.gather(*(self._one(c, r, gate) for c, r in jobs))
+        jobs = [
+            (c, r, *self._lookup(c, r)) for c in self.dataset.cases for r in range(self.repeats)
+        ]
+        if any(cached is None for *_, cached in jobs):  # nothing to warm up for a full cache
+            await self._warm_up(self.dataset.cases[0])  # cases are sorted by id
+        results = await asyncio.gather(*(self._one(c, r, gate, k, hit) for c, r, k, hit in jobs))
         self.state.outputs = sorted(
             (o for o in results if o is not None), key=lambda o: (o.case_id, o.repeat)
         )
@@ -424,8 +470,13 @@ def _status(gen: _Generation) -> RunStatus:
     return "partial" if gen.skipped else "complete"
 
 
+def pass_rate_scorers(scorers: Sequence[Scorer]) -> frozenset[str]:
+    """Scorers whose pass / fail is not already their value: they get a `:pass_rate` metric."""
+    return frozenset(s.name for s in scorers if s.verdict == "separate")
+
+
 def _scorer_refs(scorers: Sequence[Scorer]) -> list[ScorerRef]:
-    return [ScorerRef(name=s.name, version=s.version) for s in scorers]
+    return [ScorerRef(name=s.name, version=s.version, verdict=s.verdict) for s in scorers]
 
 
 def _suite_ref(suite: Suite) -> SuiteRef:
@@ -434,28 +485,24 @@ def _suite_ref(suite: Suite) -> SuiteRef:
     return SuiteRef(name=suite.spec.name, path=rel, sha256=suite.sha256)
 
 
-async def _run_config(ctx: _Context, config_name: str, target: Target) -> _ConfigResult:
+async def _run_config(
+    ctx: _Context, config_name: str, target: Target, extra_warnings: list[RunWarning]
+) -> _ConfigResult:
+    """Generate and score one config whose setup is already done."""
     identity = _Identity.of(target)
     repeats = _repeats(ctx.suite, target)
     started = datetime.now(UTC)
-    try:
-        await target.setup(ctx.dataset)
-    except Exception as exc:
-        raise RunError(f"setup of config {config_name!r} failed: {exc}") from exc
-    try:
-        generation = await _Generator(
-            ctx.suite,
-            ctx.dataset,
-            target,
-            identity,
-            repeats,
-            ctx.redactor,
-            ctx.cache,
-            ctx.ledger,
-            ctx.options,
-        ).run()
-    finally:
-        await target.teardown()
+    generation = await _Generator(
+        ctx.suite,
+        ctx.dataset,
+        target,
+        identity,
+        repeats,
+        ctx.redactor,
+        ctx.cache,
+        ctx.ledger,
+        ctx.options,
+    ).run()
     scores = score_outputs(ctx.dataset, ctx.scorers, generation.outputs, ctx.redactor)
     return _ConfigResult(
         config_name=config_name,
@@ -465,13 +512,110 @@ async def _run_config(ctx: _Context, config_name: str, target: Target) -> _Confi
         finished_at=datetime.now(UTC),
         generation=generation,
         scores=scores,
-        warnings=_generation_warnings(ctx.suite, ctx.dataset, identity, generation)
+        warnings=extra_warnings
+        + _generation_warnings(ctx.suite, ctx.dataset, identity, generation)
         + _score_warnings(generation.outputs, scores),
     )
 
 
+def _crosscheck(
+    ctx: _Context, summary: RunSummary, scores: list[Score], repeats: int
+) -> list[RunWarning]:
+    """Design §18.17: each ranking metric as recorded, against ranx's value."""
+    case_ids = [c.id for c in ctx.dataset.cases]
+    warnings = []
+    for scorer in ctx.scorers:
+        if not isinstance(scorer, RankScorer):
+            continue
+        ours = summary.metrics[scorer.name].value
+        theirs = ranx_value(scorer, scores, case_ids, repeats)
+        if abs(ours - theirs) > 1e-9:
+            warnings.append(
+                _warn(
+                    "crosscheck_mismatch",
+                    f"{scorer.name}: lite-eval {ours:.12f} vs ranx {theirs:.12f}",
+                )
+            )
+    return warnings
+
+
+def _setup_groups(targets: Sequence[tuple[str, Target]]) -> list[list[tuple[str, Target]]]:
+    """Configs that share (target name, setup_identity), in config-name order (design §18.18)."""
+    groups: dict[str, list[tuple[str, Target]]] = {}
+    for name, target in sorted(targets, key=lambda t: t[0]):
+        key = content_hash({"target": target.name, "setup": target.setup_identity()})
+        groups.setdefault(key, []).append((name, target))
+    return list(groups.values())
+
+
+async def _run_group(ctx: _Context, group: list[tuple[str, Target]]) -> list[_ConfigResult]:
+    """The leader (first) sets up; followers share its setup when they can; teardown runs
+    followers first and the leader last, after every config of the group has run."""
+    leader_name, leader = group[0]
+    ready: list[tuple[str, Target, list[RunWarning]]] = []
+    failure: BaseException | None = None
+    try:
+        for i, (name, target) in enumerate(group):
+            share = getattr(target, "share_setup_from", None) if i else None
+            notes: list[RunWarning] = []
+            try:
+                if share is not None:
+                    await share(leader)
+                else:
+                    await target.setup(ctx.dataset)
+                    if i:
+                        notes.append(
+                            _warn(
+                                "setup_not_shared",
+                                f"same setup_identity as {leader_name!r}, but the target has no "
+                                "share_setup_from: set up again",
+                            )
+                        )
+            except Exception as exc:
+                raise RunError(f"setup of config {name!r} failed: {exc}") from exc
+            ready.append((name, target, notes))
+        return [await _run_config(ctx, name, target, notes) for name, target, notes in ready]
+    except BaseException as exc:
+        failure = exc
+        raise
+    finally:
+        await _teardown_all(ready, failure)
+
+
+async def _teardown_all(
+    ready: list[tuple[str, Target, list[RunWarning]]], failure: BaseException | None
+) -> None:
+    """Tear every target down, followers first and the leader last; one failing does not stop
+    the others. With an error already on its way the teardown failures become notes on it;
+    after a clean run the first one is raised as a RunError."""
+    problems: list[str] = []
+    for name, target, _ in reversed(ready):
+        try:
+            await target.teardown()
+        except Exception as exc:
+            problems.append(f"teardown of config {name!r} failed: {exc}")
+    if not problems:
+        return
+    if failure is not None:
+        for problem in problems:
+            failure.add_note(problem)
+        return
+    raise RunError("; ".join(problems))
+
+
 def _record(ctx: _Context, r: _ConfigResult) -> RunRecord:
     gen, ident = r.generation, r.identity
+    summary = summarize(
+        ctx.dataset.cases,
+        r.repeats,
+        [s.name for s in ctx.scorers],
+        gen.outputs,
+        r.scores,
+        pass_rate_scorers(ctx.scorers),
+    )
+    warnings = list(r.warnings)
+    if ctx.options.crosscheck:
+        warnings += _crosscheck(ctx, summary, r.scores, r.repeats)
     return RunRecord(
         run_id=new_run_id(r.started_at, r.config_name),
         suite=_suite_ref(ctx.suite),
@@ -496,14 +640,13 @@ def _record(ctx: _Context, r: _ConfigResult) -> RunRecord:
         git_sha=ctx.git_sha,
         git_dirty=ctx.git_dirty,
         status=_status(gen),
-        summary=summarize(
-            ctx.dataset.cases, r.repeats, [s.name for s in ctx.scorers], gen.outputs, r.scores
-        ),
-        cost=cost_summary(gen.outputs, gen.calls),
-        warnings=r.warnings,
+        summary=summary,
+        cost=cost_summary(gen.outputs, gen.calls, gen.warmup_usage),
+        warnings=warnings,
         cache=CacheStats(hits=gen.hits, misses=gen.misses),
         ci=CiRecord(ci_mode=ctx.options.ci, paid_allowed=r.config_name in ctx.paid_allowed),
         gate=ctx.suite.spec.gate,
+        case_hashes=dict(ctx.dataset.case_hashes),
     )
 
 
@@ -513,12 +656,14 @@ async def execute(
     targets: Sequence[tuple[str, Target]],
     options: RunOptions = RunOptions(),
 ) -> list[RunResult]:
+    if options.crosscheck and importlib.util.find_spec("ranx") is None:
+        raise ConfigError("--crosscheck needs ranx: install lite-eval with the [ranking] extra")
     paid_allowed = _ci_guard(suite, targets, options.ci)
     git_sha, git_dirty = _git(suite.path.parent)
     ctx = _Context(
         suite=suite,
         dataset=dataset,
-        scorers=[build_scorer(s) for s in suite.spec.scorers],
+        scorers=[build_scorer(s) for s in suite.scorer_specs],
         redactor=from_spec(suite.spec.redact),
         cache=OutputCache(suite.root / ".lite-eval" / "cache")
         if suite.spec.cache != "off"
@@ -529,8 +674,9 @@ async def execute(
         git_sha=git_sha,
         git_dirty=git_dirty,
     )
-    # Configs run one after another, by name, so their order in the suite cannot change results.
-    results = [await _run_config(ctx, n, t) for n, t in sorted(targets, key=lambda t: t[0])]
+    # Groups and their configs run one after another, by config name, so the order in the
+    # suite cannot change results.
+    results = [r for group in _setup_groups(targets) for r in await _run_group(ctx, group)]
     for i, others in _identical_score_pairs(results).items():
         results[i].warnings.append(
             _warn(
@@ -542,8 +688,8 @@ async def execute(
     written = []
     for r in results:
         record = _record(ctx, r)
-        directory = write_run(suite.root / "runs", record, r.generation.outputs, r.scores)
-        written.append(RunResult(record=record, directory=directory))
+        directory = write_run(runs_dir(suite.root), record, r.generation.outputs, r.scores)
+        written.append(RunResult(record=record, directory=directory, scores=r.scores))
     return written
 
 
@@ -561,6 +707,20 @@ def prepare_targets(suite: Suite, config: str | None = None) -> list[tuple[str, 
     return targets
 
 
+def precheck_gate(suite: Suite, dataset: Dataset, scorers: Sequence[Scorer]) -> None:
+    """Gate configuration errors, found before any target is called (design §18.3, §18.4)."""
+    if suite.spec.gate is None:
+        raise ConfigError(f"{suite.path}: --gate, but the suite declares no `gate`")
+    base = baseline_run(suite.root, suite.spec.name) if suite.spec.gate.relative else None
+    gate_problems(
+        suite.spec.gate,
+        scorers=_scorer_refs(scorers),
+        dataset_name=dataset.meta.name,
+        case_hashes=dataset.case_hashes,
+        baseline=base.record if base else None,
+    )
+
+
 def run_suite(
     path: str | Path,
     *,
@@ -568,12 +728,21 @@ def run_suite(
     no_cache: bool = False,
     ci: bool | None = None,
     root: Path | None = None,
+    gate: bool = False,
+    crosscheck: bool = False,
 ) -> list[RunResult]:
-    """Run every config of a suite (or one) and write one run directory per config."""
+    """Run every config of a suite (or one) and write one run directory per config.
+
+    With `gate`, the gate's configuration is checked first; evaluate it with `gate_results`.
+    """
     suite = load_suite(Path(path), root or Settings().root)
     dataset = load_dataset(suite.dataset_path)
+    if gate:
+        precheck_gate(suite, dataset, [build_scorer(s) for s in suite.scorer_specs])
     targets = prepare_targets(suite, config)
-    options = RunOptions(no_cache=no_cache, ci=ci_from_env() if ci is None else ci)
+    options = RunOptions(
+        no_cache=no_cache, ci=ci_from_env() if ci is None else ci, crosscheck=crosscheck
+    )
     return asyncio.run(execute(suite, dataset, targets, options))
 
 
@@ -581,7 +750,7 @@ def rescore_run(run_dir: str | Path, scorer_specs: Sequence[str] | None = None) 
     """Score a run's stored outputs again; never calls the target. Writes a new run."""
     stored = load_run(Path(run_dir))
     rec = stored.record
-    root = stored.directory.parents[2]  # <root>/runs/<suite>/<run_id>
+    root = stored.root
     if rec.suite.path is None:
         raise ConfigError("the run does not record its suite path; cannot find the dataset")
     suite = load_suite(root / rec.suite.path, root)
@@ -603,7 +772,12 @@ def rescore_run(run_dir: str | Path, scorer_specs: Sequence[str] | None = None) 
             "started_at": now,
             "finished_at": datetime.now(UTC),
             "summary": summarize(
-                dataset.cases, rec.repeats, [s.name for s in scorers], stored.outputs, scores
+                dataset.cases,
+                rec.repeats,
+                [s.name for s in scorers],
+                stored.outputs,
+                scores,
+                pass_rate_scorers(scorers),
             ),
             "cost": cost_summary(stored.outputs, calls=0),
             "cache": CacheStats(),
@@ -612,5 +786,5 @@ def rescore_run(run_dir: str | Path, scorer_specs: Sequence[str] | None = None) 
             "lite_eval_version": __version__,
         }
     )
-    directory = write_run(root / "runs", record, stored.outputs, scores)
-    return RunResult(record=record, directory=directory)
+    directory = write_run(runs_dir(root), record, stored.outputs, scores)
+    return RunResult(record=record, directory=directory, scores=scores)

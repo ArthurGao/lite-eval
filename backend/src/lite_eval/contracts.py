@@ -8,7 +8,7 @@ unknown fields. A new field must have a default so that records written by an ol
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from lite_eval.canonical import content_hash
 
@@ -135,9 +135,17 @@ class DatasetRef(_Record):
     synthetic: bool = False
 
 
+Verdict = Literal["value", "separate", "none"]
+# How a scorer judges (E2): "value" -- its value is 1 exactly when the case passes (exact_match,
+# hit@k); "separate" -- a fraction plus its own pass / fail (keywords): it gets a `:pass_rate`
+# metric; "none" -- no pass / fail at all (mrr@k, a weighted composite). Comparisons pick McNemar
+# or the bootstrap from this declaration, never from the values a run happened to produce.
+
+
 class ScorerRef(_Record):
     name: str
     version: str
+    verdict: Verdict | None = None  # None: recorded before E2
 
 
 class RedactConfig(_Record):
@@ -190,6 +198,57 @@ class CiRecord(_Record):
     paid_allowed: bool = False
 
 
+# Lower-is-better gate metrics read from the cost summary (gate name -> CostSummary field).
+COST_METRICS = {
+    "latency_p50": "latency_p50_ms",
+    "latency_p95": "latency_p95_ms",
+    "cost_usd": "cost_usd",
+}
+
+
+class GateRule(_Record):
+    """Design §8.4, §18.19: an absolute bound (`min` / `max`) or a drop against the baseline."""
+
+    metric: str
+    min: float | None = None
+    max: float | None = None
+    compare_to: Literal["baseline"] | None = None
+    max_drop: float | None = Field(default=None, ge=0)
+    require_significant: bool = False
+    baseline_note: str | None = None
+
+    @model_validator(mode="after")
+    def _one_kind(self) -> "GateRule":
+        absolute = self.min is not None or self.max is not None
+        relative = self.compare_to is not None or self.max_drop is not None
+        if absolute == relative:
+            raise ValueError(
+                f"gate rule for {self.metric!r} needs either min/max or compare_to + max_drop"
+            )
+        if relative and (self.compare_to is None or self.max_drop is None):
+            raise ValueError(
+                f"relative gate rule for {self.metric!r} needs compare_to and max_drop"
+            )
+        if self.require_significant and not relative:
+            raise ValueError("require_significant only applies to a relative rule")
+        if relative and self.metric in COST_METRICS:
+            raise ValueError(
+                f"{self.metric} cannot be compared to the baseline: a cost metric is bounded "
+                "with `max`"
+            )
+        return self
+
+
+class GateSpec(_Record):
+    rules: list[GateRule] = Field(min_length=1)
+    allow_partial: bool = False
+    allow_partial_overlap: bool = False
+
+    @property
+    def relative(self) -> list[GateRule]:
+        return [r for r in self.rules if r.compare_to is not None]
+
+
 class RunRecord(_Record):
     schema_version: int = SCHEMA_VERSION
     run_id: str
@@ -215,7 +274,54 @@ class RunRecord(_Record):
     cache: CacheStats = Field(default_factory=CacheStats)
     ci: CiRecord = Field(default_factory=CiRecord)
     rescored_from: str | None = None
-    gate: JsonValue = None  # recorded as declared; evaluated from E2
+    gate: GateSpec | None = None  # as declared in the suite; `lite-eval run --gate` evaluates it
+    case_hashes: dict[str, str] = Field(default_factory=dict)  # case id -> hash (§18.3)
+
+
+class MetricDelta(_Record):
+    """One metric of a comparison (design §8.2, §18.2, §18.3)."""
+
+    metric: str
+    status: Literal["compared", "incomparable"]
+    reason: str = ""  # why incomparable
+    baseline: float | None = None
+    candidate: float | None = None
+    delta: float | None = None  # candidate - baseline, over the compared cases
+    n: int = 0  # compared cases
+    discordant: int = 0  # cases whose value differs
+    test: Literal["mcnemar", "bootstrap"] | None = None
+    p_value: float | None = None
+    ci_low: float | None = None
+    ci_high: float | None = None
+    significant: bool | None = None
+    within_noise: bool = False
+    note: str = ""  # the verdict in words, e.g. "not significant (n=20, 1 discordant case)"
+
+
+CaseChangeKind = Literal["regressed", "fixed", "changed"]
+
+
+class CaseChange(_Record):
+    case_id: str
+    metric: str
+    kind: CaseChangeKind  # regressed / fixed: a pass flipped; changed: a continuous value moved
+    baseline: float
+    candidate: float
+
+
+class Comparison(_Record):
+    schema_version: int = SCHEMA_VERSION
+    baseline_run: str
+    candidate_run: str
+    dataset: str
+    overlap: Literal["full", "partial_overlap"]
+    changed_cases: list[str] = Field(default_factory=list)  # same id, different content
+    added_cases: list[str] = Field(default_factory=list)
+    removed_cases: list[str] = Field(default_factory=list)
+    case_weight: float  # one compared case moves a 0..1 metric by this much
+    metrics: list[MetricDelta]
+    changes: list[CaseChange]  # regressions first
+    warnings: list[RunWarning] = Field(default_factory=list)
 
 
 class Annotation(_Record):

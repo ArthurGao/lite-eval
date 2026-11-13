@@ -11,12 +11,12 @@ from functools import cached_property
 from typing import Any
 
 from lite_eval.canonical import canonical_json
-from lite_eval.contracts import Case, Output, Score
+from lite_eval.contracts import Case, Output, Score, Verdict
 from lite_eval.errors import ConfigError
 from lite_eval.scorers.base import Spec, spec_name
 
 
-def _get(value: Any, path: str | None) -> Any:
+def get_path(value: Any, path: str | None) -> Any:
     if not path:
         return value
     for part in path.split("."):
@@ -62,9 +62,13 @@ class _Deterministic:
     def name(self) -> str:
         return spec_name(self.spec)
 
+    @property
+    def verdict(self) -> Verdict:
+        return "value" if self.kind in _BINARY_KINDS else "separate"
+
     def score(self, case: Case, output: Output) -> Score:
-        got = _get(output.value, self.params.get("field"))
-        want = _get(case.expected, self.params.get("expected"))
+        got = get_path(output.value, self.params.get("field"))
+        want = get_path(case.expected, self.params.get("expected"))
         value, passed, reason, evidence = self.judge(got, want, self.params)
         return Score(
             case_id=output.case_id,
@@ -148,6 +152,7 @@ _JUDGES: dict[str, Judge] = {
     "set_precision": _set_ratio(of_expected=False),
 }
 _COMMON_PARAMS = {"field", "expected", "case_sensitive"}
+_BINARY_KINDS = {"exact_match", "contains", "regex", "must_not"}
 _EXTRA_PARAMS = {"regex": {"pattern"}}
 
 

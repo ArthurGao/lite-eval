@@ -18,12 +18,13 @@ backend/
     suite.py                  # suite YAML and the evaluation root (design §18.20)
     datasets/                 # local.py: dataset dir, hashes, secret scan; loaders/ (longmemeval, locomo)
     targets/                  # base.py (protocol, errors), python.py, fake.py; http.py, command.py (E4)
-    scorers/                  # base.py, deterministic.py, compose.py; ranking.py (E2), judge.py (E5)
-    packs/                    # one module per task type (cost.py from E1)
+    scorers/                  # base.py, deterministic.py, compose.py, ranking.py (hit/mrr/ndcg@k); judge.py (E5)
+    packs/                    # __init__.py: registry (retrieval); cost.py comes with every run
     cache.py                  # output cache (design §18.5)
     runner.py                 # two-phase execution (design §6)
     store.py  index.py        # run directories (truth) and the Viewer's SQLite index (rebuildable)
-    analysis/                 # summary, compare (McNemar, bootstrap), gate
+    analysis/                 # summary, compare (McNemar, bootstrap, comparability), gate
+    api.py                    # compare_runs, gate_results, assert_gate (design §11.3)
     report/                   # terminal, html, kb
     redact.py
     server/                   # FastAPI: read-only API + annotations; static/ = frontend build (copied, gitignored)

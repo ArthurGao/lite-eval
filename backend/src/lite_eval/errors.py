@@ -17,3 +17,9 @@ class RunError(LiteEvalError):
     """The runner itself failed, or no case was scored: exit 3."""
 
     exit_code = 3
+
+
+class GateFailed(AssertionError):
+    """A gate condition failed: exit 1. An AssertionError so pytest reports it as a failure."""
+
+    exit_code = 1

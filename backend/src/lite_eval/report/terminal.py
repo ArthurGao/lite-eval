@@ -1,6 +1,9 @@
 """Plain-text run report for the terminal (design §8.1): numbers, doubt and errors side by side."""
 
-from lite_eval.contracts import RunRecord
+from collections import Counter
+
+from lite_eval.analysis.gate import GateOutcome
+from lite_eval.contracts import Comparison, RunRecord
 
 
 def _fmt(x: float | None, digits: int = 3) -> str:
@@ -42,4 +45,47 @@ def render_run(record: RunRecord, directory: str | None = None) -> str:
         lines.append(f"  WARNING {w.code}: {w.message}")
     if directory:
         lines.append(f"  written to {directory}")
+    return "\n".join(lines)
+
+
+def render_comparison(c: Comparison, limit: int = 20) -> str:
+    """Deltas with their doubt in words; per-case changes, regressions first (design §8.2)."""
+    lines = [
+        f"compare {c.baseline_run} -> {c.candidate_run}  (dataset {c.dataset}, {c.overlap})",
+        f"  1 compared case = {c.case_weight:.3f} of a 0-1 metric",
+    ]
+    width = max((len(d.metric) for d in c.metrics), default=6)
+    for d in c.metrics:
+        if d.status == "incomparable":
+            lines.append(f"  {d.metric.ljust(width)}  incomparable: {d.reason}")
+            continue
+        lines.append(
+            f"  {d.metric.ljust(width)}  {_fmt(d.baseline)} -> {_fmt(d.candidate)}  "
+            f"({(d.delta or 0):+.4f})  {d.note}"
+        )
+    if c.changes:
+        kinds = Counter(x.kind for x in c.changes)
+        lines.append(
+            f"  cases: {kinds['regressed']} regressed, {kinds['fixed']} fixed, "
+            f"{kinds['changed']} changed (worse first)"
+        )
+        for x in c.changes[:limit]:
+            lines.append(
+                f"    {x.kind:9} {x.case_id}  {x.metric}  {x.baseline:g} -> {x.candidate:g}"
+            )
+        if len(c.changes) > limit:
+            lines.append(f"    … {len(c.changes) - limit} more")
+    for w in c.warnings:
+        lines.append(f"  WARNING {w.code}: {w.message}")
+    return "\n".join(lines)
+
+
+def render_gate(outcome: GateOutcome) -> str:
+    if outcome.passed:
+        return f"gate passed: {outcome.config} ({outcome.run_id})"
+    lines = [f"gate FAILED: {outcome.config} ({outcome.run_id})"]
+    lines += [f"  - {f}" for f in outcome.failures]
+    if outcome.regressions:
+        ids = sorted({c.case_id for c in outcome.regressions})
+        lines.append(f"  regressed cases ({len(ids)}): " + ", ".join(ids))
     return "\n".join(lines)

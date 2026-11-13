@@ -15,6 +15,8 @@ dependencies = [
     "pyyaml==6.0.3",
     # httpx2, not httpx: the openai SDK (judges, E5) and mcp already run on httpx2; one HTTP client per process.
     "httpx2==2.16.0",
+    # Paired bootstrap for comparisons (design §18.2): 10 000 resamples need vectorised sums.
+    "numpy==2.5.4",
 ]
 
 [project.optional-dependencies]

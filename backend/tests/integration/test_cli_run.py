@@ -123,7 +123,7 @@ def test_rescore_refuses_a_changed_dataset(repo: Path) -> None:
         ({"scorers": ["nope"]}, "unknown scorer 'nope'"),
         ({"dataset": "../datasets/missing"}, "not a dataset directory"),
         ({"redact": [{"name": "ticket"}]}, "pattern"),
-        ({"pack": "retrieval"}, "pack 'retrieval' is not available yet"),
+        ({"pack": "summarise"}, "unknown pack 'summarise'"),
     ],
 )
 def test_config_errors_exit_two(repo: Path, spec: dict[str, Any], message: str) -> None:

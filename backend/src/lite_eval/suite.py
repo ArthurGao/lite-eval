@@ -17,7 +17,9 @@ from pydantic import (
 )
 
 from lite_eval.canonical import sha256_hex
+from lite_eval.contracts import GateSpec
 from lite_eval.errors import ConfigError
+from lite_eval.packs import get_pack
 
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 
@@ -75,7 +77,13 @@ class SuiteSpec(_Spec):
     expect_tags: dict[str, list[str]] = Field(default_factory=dict)
     allow_paid_in_ci: bool = False
     cache: Literal["auto", "on", "off"] = "auto"
-    gate: JsonValue = None  # recorded now, evaluated from E2
+    gate: GateSpec | None = None
+
+    @field_validator("gate", mode="before")
+    @classmethod
+    def _gate_list(cls, gate: Any) -> Any:
+        """The design's short form: a bare list of rules."""
+        return {"rules": gate} if isinstance(gate, list) else gate
 
     @field_validator("name")
     @classmethod
@@ -102,6 +110,13 @@ class Suite:
         return (self.path.parent / self.spec.dataset).resolve()
 
     @property
+    def scorer_specs(self) -> list[str | dict[str, Any]]:
+        """The suite's scorers, or its pack's defaults."""
+        if self.spec.scorers:
+            return list(self.spec.scorers)
+        return list(get_pack(str(self.spec.pack)).scorers)
+
+    @property
     def import_root(self) -> Path:
         """Where `module:factory` targets are imported from: the repository holding the root."""
         return self.root.parent
@@ -124,8 +139,11 @@ def load_suite(path: Path, root: Path | None = None) -> Suite:
         raise ConfigError(f"{path}: invalid suite: {exc}") from exc
     if not spec.pack and not spec.scorers:
         raise ConfigError(f"{path}: a suite without `pack` must list `scorers`")
-    if spec.pack:  # the pack registry arrives with the retrieval pack (E2)
-        raise ConfigError(f"{path}: pack {spec.pack!r} is not available yet (E1 has only `cost`)")
+    if spec.pack:
+        try:
+            get_pack(spec.pack)
+        except ConfigError as exc:
+            raise ConfigError(f"{path}: {exc}") from exc
     return Suite(
         spec=spec,
         path=path,

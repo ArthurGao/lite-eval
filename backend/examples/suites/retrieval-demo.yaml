@@ -1,0 +1,12 @@
+schema_version: 1
+name: retrieval-demo
+pack: retrieval
+dataset: ../datasets/brewing
+targets:
+  - python: examples.retrieval_target:make
+    configs:
+      - {name: order, ranking: order}
+      - {name: overlap, ranking: overlap}
+gate:
+  - {metric: hit@5, min: 0.75, baseline_note: "1.00 on 2026-11-14 (overlap)"}
+  - {metric: mrr@10, compare_to: baseline, max_drop: 0.1}

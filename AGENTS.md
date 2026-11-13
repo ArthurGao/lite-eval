@@ -85,7 +85,9 @@ uv sync --locked --all-extras        # a bare `uv sync` drops the extras and loo
 uv run pytest                        # fakes only
 uv run pytest -m ollama              # opt-in: real local models
 uv run ruff check && uv run ruff format --check && uv run mypy
-uv run lite-eval run <suite.yaml> [--config NAME] [--no-cache] [--ci]   # --gate from E2
+uv run lite-eval run <suite.yaml> [--config NAME] [--no-cache] [--gate] [--crosscheck] [--ci]
+uv run lite-eval compare <baseline run> <candidate run>
+uv run lite-eval baseline set <run>
 uv run lite-eval rescore <runs/<suite>/<run_id>> [--scorer SPEC]
 uv run lite-eval view                # http://127.0.0.1:8720
 ```
