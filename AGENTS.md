@@ -37,7 +37,7 @@ If a change must contradict the design, update the design in the same change and
 
 ## Current stage
 
-**E2 done (2026-11-14; lite-rag migrated); next E3** (the Viewer; design §16). v1 = E0–E3.
+**E3a done (2026-11-14: Viewer backend, API, annotations, export); next E3b** (frontend, e2e, packaging; design §16). v1 = E0–E3.
 
 ## Rules
 

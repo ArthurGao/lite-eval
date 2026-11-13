@@ -4,18 +4,19 @@ Write order: outputs.jsonl, scores.jsonl, then run.json through a temporary file
 A directory without run.json is a run in progress (or a crashed one) and is never read as a run.
 """
 
+import re
 import secrets
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from lite_eval.contracts import Output, RunRecord, Score
-from lite_eval.errors import ConfigError
-from lite_eval.files import atomic_write, read_jsonl
+from lite_eval.contracts import BaselineChange, Output, RunRecord, Score
+from lite_eval.errors import ConfigError, NotFound
+from lite_eval.files import append_jsonl, atomic_write, read_jsonl
 
 
 def new_run_id(started_at: datetime, config_name: str) -> str:
@@ -55,16 +56,35 @@ def root_of(run_directory: Path) -> Path:
     return run_directory.parents[2]
 
 
-def load_run(directory: Path, *, outputs: bool = True) -> StoredRun:
-    """A finished run. `outputs=False` skips outputs.jsonl (the largest file) for callers that
-    need only the record and the scores, such as comparisons and gates."""
+_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def run_path(root: Path, suite: str, run_id: str) -> Path:
+    """`<root>/runs/<suite>/<run_id>` of a finished run; a name that could leave the runs
+    directory (`..`, a slash) is refused like a missing run."""
+    if not (_SEGMENT.match(suite) and _SEGMENT.match(run_id)):
+        raise NotFound(f"no run {suite}/{run_id}")
+    directory = runs_dir(root) / suite / run_id
+    if not (directory / "run.json").is_file():
+        raise NotFound(f"no run {suite}/{run_id} in {runs_dir(root)}")
+    return directory
+
+
+def read_record(directory: Path) -> RunRecord:
+    """Only run.json: the record without outputs or scores."""
     run_json = directory / "run.json"
     if not run_json.is_file():
         raise ConfigError(f"not a finished run directory (no run.json): {directory}")
     try:
-        record = RunRecord.model_validate_json(run_json.read_bytes())
+        return RunRecord.model_validate_json(run_json.read_bytes())
     except ValidationError as exc:
         raise ConfigError(f"{run_json}: {exc}") from exc
+
+
+def load_run(directory: Path, *, outputs: bool = True) -> StoredRun:
+    """A finished run. `outputs=False` skips outputs.jsonl (the largest file) for callers that
+    need only the record and the scores, such as comparisons and gates."""
+    record = read_record(directory)
     stored_outputs = read_jsonl(directory / "outputs.jsonl", Output) if outputs else []
     seen: set[tuple[str, int]] = set()
     for o in stored_outputs:
@@ -84,6 +104,7 @@ def load_run(directory: Path, *, outputs: bool = True) -> StoredRun:
 # ---------------------------------------------------------------- baselines (design §12)
 
 BASELINES = "baselines.yaml"
+BASELINE_LOG = "baselines.log.jsonl"  # every switch, for trends (design §12)
 
 
 def runs_dir(root: Path) -> Path:
@@ -107,17 +128,34 @@ def baseline_run(root: Path, suite: str) -> StoredRun | None:
     run_id = read_baselines(root).get(suite)
     if run_id is None:
         return None
-    directory = runs_dir(root) / suite / run_id
-    if not directory.is_dir():
-        raise ConfigError(f"baseline {run_id} of suite {suite!r} is not in {runs_dir(root)}")
+    try:
+        directory = run_path(root, suite, run_id)
+    except NotFound:
+        raise ConfigError(
+            f"baseline {run_id} of suite {suite!r} is not in {runs_dir(root)}"
+        ) from None
     return load_run(directory, outputs=False)
 
 
 def set_baseline(stored: StoredRun) -> Path:
     """Make a finished run its suite's baseline; returns the baselines file."""
     root = stored.root
+    suite = stored.record.suite.name
     baselines = read_baselines(root)
-    baselines[stored.record.suite.name] = stored.record.run_id
+    change = BaselineChange(
+        suite=suite,
+        run_id=stored.record.run_id,
+        previous=baselines.get(suite),
+        set_at=datetime.now(UTC),
+    )
+    baselines[suite] = stored.record.run_id
     path = root / BASELINES
     atomic_write(path, yaml.safe_dump(dict(sorted(baselines.items())), sort_keys=False))
+    append_jsonl(root / BASELINE_LOG, change)
     return path
+
+
+def read_baseline_changes(root: Path) -> list[BaselineChange]:
+    """Baseline switches in the order they were made; switches before E3 were not logged."""
+    path = root / BASELINE_LOG
+    return read_jsonl(path, BaselineChange) if path.exists() else []

@@ -6,9 +6,9 @@ unknown fields. A new field must have a default so that records written by an ol
 """
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from lite_eval.canonical import content_hash
 
@@ -324,6 +324,19 @@ class Comparison(_Record):
     warnings: list[RunWarning] = Field(default_factory=list)
 
 
+NOTE_MAX_BYTES = 4096
+
+
+def _note_fits(note: str) -> str:
+    # §18.9: 4 KB of UTF-8, not 4096 characters (CJK text is three bytes a character).
+    if len(note.encode("utf-8")) > NOTE_MAX_BYTES:
+        raise ValueError(f"a note is at most {NOTE_MAX_BYTES} bytes of UTF-8")
+    return note
+
+
+Note = Annotated[str, AfterValidator(_note_fits)]
+
+
 class Annotation(_Record):
     """Design §18.9. Written by the Viewer and `lite-eval triage` (E3)."""
 
@@ -334,7 +347,23 @@ class Annotation(_Record):
     case_hash: str
     run_id: str | None = None
     category: AnnotationCategory
-    note: str = Field(default="", max_length=4096)
+    note: Note = ""
     author: str
     created_at: datetime
     supersedes: str | None = None
+
+    @property
+    def key(self) -> tuple[str, str, str]:
+        """One current annotation per key (§18.9)."""
+        return (self.dataset, self.case_id, self.case_hash)
+
+
+class BaselineChange(_Record):
+    """One `lite-eval baseline set`, appended to `<root>/baselines.log.jsonl` (design §12): the
+    Viewer's trends mark where a suite's baseline switched."""
+
+    schema_version: int = SCHEMA_VERSION
+    suite: str
+    run_id: str
+    previous: str | None = None
+    set_at: datetime

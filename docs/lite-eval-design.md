@@ -514,8 +514,8 @@ lite-eval rescore <run> [--scorer …]          # 只重跑打分
 lite-eval compare <baseline> <candidate>
 lite-eval triage <run>                        # 在终端里逐条归类 miss
 lite-eval baseline set <run>                  # 运行记录里有 suite 名
-lite-eval view [--port 8720]
-lite-eval report --html <run | baseline..candidate> -o out.html
+lite-eval view [--root DIR] [--host 127.0.0.1] [--port 8720] [--check]
+lite-eval report --html <run | baseline..candidate> -o out.html [--redact RULE]
 lite-eval export kb <run>                     # KB results.jsonl 的行（§13）
 lite-eval datasets list | show <name> | hash <path>
 ```
@@ -540,6 +540,7 @@ assert_gate(run)                     # 在 pytest 里调用；失败时打印退
   datasets/<name>/{dataset.yaml, cases.jsonl, corpus/…}
   runs/<suite>/<run_id>/{run.json, outputs.jsonl, scores.jsonl}
   baselines.yaml              # suite → 作为 baseline 的 run_id
+  baselines.log.jsonl         # 每次 `baseline set` 追加一行（E3 起），趋势页据此标出切换
   annotations.jsonl
   .lite-eval/                 # gitignored
     cache/                    # 输出缓存
@@ -781,6 +782,38 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
   - /simplify 和 Codex 的结论记在 lite-rag 设计的 S12 实现说明里。和 lite-eval 有关的不采纳项：
     - 不公开 `run_suite(targets=…)`：lite-rag 直接用 `runner.execute`（它的 target 共用一个 store 和 embedder，`python: module:factory` 表达不了）；等第二个使用方再定公开 API，在此之前 lite-rag 按提交锁定，每次升级跑等价测试；
     - lite-eval 不在 setup 失败后调用 teardown：那要改 Target 协议；setup 可能半途失败的适配器在 setup 里自己清理（lite-rag 就这么做）。
+- **E3a Viewer 后端（2026-11-14，lite-eval 仓库）**：E3 分两片：E3a 后端，E3b 前端、e2e 和打包。
+  - owner 定（2026-11-14）：用例内容从数据集按哈希取，不在运行目录里另存；`baseline set` 追加写 `baselines.log.jsonl`；`lite-eval triage` 在 E3 一起做。
+  - 做了什么（细节见 §18.22）：
+    - annotation 的读写（§18.9）；
+    - SQLite 索引和文件两种 catalog（§18.15）；
+    - `views`，以及 FastAPI 的只读 API 和 annotation 写入，安全规则按 §18.10；
+    - `view`（含 `--check`）、`triage`、`report --html`；
+    - 提交 `backend/openapi.json`，过期时测试失败。
+  - 验证：
+    - pytest 322 passed；在 `CI=true` 下、以及按最低声明版本安装的 venv 里（同 CI 的 `lowest` 任务）也都通过。
+    - 改坏脚本 63/63 变红。
+      - 一条等价变异已删掉，原因：只追加且持锁写入时，"没被取代的那条"总是该键最后写入的那条。
+      - 两条变异会让 `view` 真的启动起来挂住：对应测试改为服务一旦启动就失败，脚本超时时杀掉整个进程组。
+    - 用 lite-rag 真实的 `eval/lite-eval/` 走了一遍 API：3 个运行、miss、按哈希取回的用例内容、显著性对比、趋势。
+  - 实现中发现并修掉的问题：
+    - fastapi 0.133 加 pydantic 2.9（声明的下限）生成的规范，对只有一个值的 `Literal` 会多写一个 `enum`。导出规范时去掉与 `const` 重复的单元素 `enum`，锁定版本和最低版本得到同一份文件。
+  - /simplify（四个审查）：
+    - 3 个 bug，都先写了失败的测试，或写明为什么测不了：
+      - partial 运行里没生成的用例原来不算 miss，分数也缺失，违反规则 4。现在逐用例结果由 `analysis.summary.case_results` 按运行汇总的同一口径计算，记为 `not_generated`、得 0 分；
+      - 导出对整份数据做盲脱敏，会改写 `case_id` 这类 id，也违反 §18.12 的"数据集不脱敏"。现在按类型脱敏，和 Viewer 是同一套代码；
+      - baseline 日志追加后没有 fsync。现在共用 `files.append_jsonl`；fsync 本身没有测试能观察到。
+    - 采纳的改进：
+      - 加载和组装分开：导出和 triage 每个运行只加载一次（原来每个用例都要重载运行、所有数据集和其他运行）；
+      - 按名字找数据集只读 yaml 和用例，不再哈希语料；"其他运行"先读 run.json，哈希对不上就不解析 outputs；
+      - 两个 catalog 共用一条查询路径（原来 SQL 和 Python 各有一份过滤）；
+      - 新增 `annotate()`、`store.run_path` / `read_record`、`errors.NotFound`；
+      - 去掉 `_Only`、各种 limit 哨兵值和死代码；地址校验改成纯函数并直接测试；测试辅助函数集中到 `tests/helpers.py`。
+    - 不采纳：
+      - 按版本条件比较 OpenAPI 规范：会削弱检查，CI 又不许跳过测试；
+      - `report A..B` 改成两个参数：§11.2 定的公开语法，留给 owner 决定；
+      - 查询参数模型、SQL 分页、后台刷新线程、数据集摘要缓存：在几百个运行的规模下收益很小。
+  - Codex：1 条成立，已修（先红后绿）：对比导出把两个运行都放在第一个运行的评测根目录里找；现在各自从自己的目录加载。其余方面（安全、加锁、索引、转义、脱敏、逐用例口径）没有发现问题。
 
 ## 17. 已定的开工问题（2026-11-13）
 
@@ -906,6 +939,12 @@ pytest 的 `assert_gate` 对应抛出 `ConfigError`、`RunError`、`GateFailed`�
 - **用例内容变了**（`case_hash` 不同）：旧的归类不自动带到新内容上，Viewer 里显示为“旧版本的归类”。
 - **不改数据集**：真正修标注，是在 git 里改数据集文件，于是哈希变化（R9）。Annotation 不需要版本号。
 - **写入**：追加一行到 `annotations.jsonl`，写前持有排他文件锁（`fcntl.flock`，锁文件 `annotations.jsonl.lock`），写完 `fsync`。Viewer 和 `lite-eval triage` 用同一个锁。
+- **补充（E3 定）**：
+  - `note` 的上限是 UTF-8 的 4096 字节，不是 4096 个字符（中文一个字三个字节）。E3 之前没有写过 annotation，所以这条收紧不影响旧记录。
+  - `author` 依次取 `LITE_EVAL_AUTHOR`、`git config user.name`、登录名；Viewer 的请求里不带作者。
+  - `annotation_id` 是手写的 UUIDv7（Python 3.12 没有 `uuid.uuid7`）。
+  - 更正必须和被更正的那条是同一个键，否则拒绝。
+  - **miss** 的定义：该用例有输出出错、有重复没有生成输出（partial 运行，错误记为 `not_generated`），或者有评分器给出 `passed=false` 或评分出错。逐用例的分数和运行汇总同一口径（§18.1：缺的重复算 0），由 `analysis.summary.case_results` 计算。Miss 归类页和 `triage` 只列 miss。
 
 ### 18.10 Viewer 的安全
 
@@ -1152,3 +1191,41 @@ runner 开始时会把要执行的命令或 URL 打印出来。
   - `lite-eval baseline set <run>` 写 `<root>/baselines.yaml`（suite 名 → run_id），并提示把运行目录和这个文件一起提交（§17）。
 - **setup 共享**：Target 可以实现 `share_setup_from(leader)`；预热时 runner 把上下文变量 `lite_eval.targets.base.warming_up` 设为真，Target 可以据此不把预热算进自己的统计。
 - **`--crosscheck`**：对每个检索评分器，从每个分数的 evidence 里取出名次，用 ranx 0.3.21 重算（每次重复分别算再平均），和 lite-eval 的值相差超过 1e-9 就给 `crosscheck_mismatch` 警告；没装 `[ranking]` extra 时报配置错误。
+
+### 18.22 Viewer 的接入（E3 定）
+
+- **模块**：
+  - `index.py`：运行目录（`FileCatalog`）和 SQLite 索引（`IndexCatalog`）实现同一个 `RunCatalog` 接口（`list_runs`、`trend`），同一套读取测试跑两种实现。
+  - `views.py`：页面要的数据（运行详情、逐用例、用例详情、数据集、对比）。加载和组装分开：`open_run` 把一个运行和它的数据集用例加载一次，`rows`、`detail` 从加载好的数据组装；HTTP 每个请求加载一次，导出和 `triage` 只加载一次再逐个用例组装。按名字找数据集只读 `dataset.yaml` 和 `cases.jsonl`（不哈希语料）。server 和 HTML 导出都从这里取，所以导出的页面和 Viewer 显示的一样。
+  - `annotations.py`：§18.9 的读写。
+  - `server/`：`guard.py`（§18.10）、`app.py`（路由）、`run.py`（启动和 `--check`）、`paths.py`（构建产物的位置；不依赖 `[server]` extra，导出也要用）。
+- **索引**：
+  - 只存每个运行的列表行（`RunRow`）和用来筛选的列；哪个运行是 baseline，每次查询时现读 `baselines.yaml`，不进索引（切换 baseline 不改任何 run.json）。
+  - 有请求进来、且距上次扫描超过 5 秒时，增量扫描一次（§18.15 的"每 5 秒或有请求时"取后者，不另开后台线程）。
+  - 读不了的 run.json（手改坏了、正在被替换）跳过，不让 Viewer 报错。
+- **运行列表的筛选**：suite、config、status、pack、数据集名和版本、是否 baseline。运行本身没有标签，§10.1 说的"按标签筛选"落到这些字段上。
+- **用例内容**：按运行记录里的 `case_hashes` 去 `<root>/datasets/*/` 里找同名数据集（owner 2026-11-14 定，运行目录里不另存用例）：
+  - 哈希相同：`current`；
+  - 用例还在但内容变了：`changed`，显示今天的内容并标出来；
+  - 数据集或用例不在了：`missing`。
+  - "同一用例在其他运行里的结果"只列内容哈希相同的运行，最多 20 个，新的在前。
+- **API**（路径都在 `/api` 下；规范提交在 `backend/openapi.json`，测试 `test_openapi_spec_is_current` 在它过期时失败）：
+  - 读：`health`、`runs`、`runs/{suite}/{run_id}`、`…/cases`、`…/cases/{case_id}`、`compare?baseline=&candidate=`（`<suite>/<run_id>`）、`datasets`、`datasets/{name}/cases`、`trends?suite=&metric=[&config=]`、`annotations`；
+  - 写：`POST annotations`，服务端补上 id、作者和时间；
+  - 错误统一为 `{"error": {"message", "code"}}`：404 `not_found`、409 `conflict`、400 `bad_request`、403 `forbidden_host` / `forbidden_origin` / `missing_token`、413 `too_large`；请求校验失败是 FastAPI 默认的 422。
+  - 规范导出时去掉与 `const` 重复的单元素 `enum`：pydantic 2.9（声明的下限）会多写这一项，2.14（锁定版本）不写，两者含义相同。
+- **安全（§18.10 的实现）**：
+  - 写请求的请求体在中间件里先读完再交给应用，超过 16 KB 就返回 413，不管 `Content-Length` 写的是多少；
+  - token 每个进程随机生成，返回 `/` 时注入到 `<meta name="lite-eval-token">`，页面带 `Cache-Control: no-store`。
+- **`lite-eval view`**：
+  - `--root` 默认取当前目录（有 `runs/` 或 `suites/` 时），否则 `./evals`，都没有就报错（退出码 2）。
+  - `--check` 不给 `--root` 时用一个空的临时目录，所以不会抢正在运行的 Viewer 的锁；`/` 或 `/api/health` 不是 200 时退出码 3。
+  - 隐藏选项 `--static` 指定别的前端构建目录（测试和 e2e 用）。
+  - `fastapi`、`uvicorn` 在 `[server]` extra 里；没装时 `view` 给出一行安装提示。
+- **`lite-eval triage <run>`**：逐条列出还没有当前归类的 miss（输入、期望、输出，各截到 400 字符），按 r / l / e / u 归类，s 跳过，q 退出；别人刚好先归类了同一条时，提示后继续下一条。
+- **`lite-eval report --html`**：
+  - 参数是一个运行目录，或者 `<baseline 目录>..<candidate 目录>`（在两边都是目录的那个 `..` 处拆开，所以 `../runs/x` 这样的相对路径照样能用）。
+  - 页面就是 Viewer 自己的构建：CSS 内联成 `<style>`；唯一的 JS 文件变成 `data:` URL 的 module script，所以 JS 里出现 `</script>` 也不会结束标签；数据按 §18.12 转义后放进 `#lite-eval-data`。
+  - 数据格式：`{kind: run | compare, runs: {"<suite>/<run_id>": {detail, rows, cases: {case_id: CaseDetail}}}, comparison}`。用例详情里的"其他运行"只在导出的运行之间找。
+  - 脱敏按类型进行，和 Viewer 是同一套代码：输出、分数、警告、target 的 config 和 info 用导出运行的规则并集加 `--redact`；id、哈希和数据集内容不改（§18.12：数据集不脱敏，加载时扫描）。所以对比导出里，一个运行的文本也要满足另一个运行的规则。
+

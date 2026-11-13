@@ -4,16 +4,18 @@ Exit codes (design §18.4): 0 pass, 1 gate failed (from E2), 2 config or input e
 """
 
 from pathlib import Path
+from types import ModuleType
 from typing import Annotated, NoReturn
 
 import typer
 
 from lite_eval import __version__
 from lite_eval.api import compare_runs, gate_results
-from lite_eval.errors import LiteEvalError
+from lite_eval.contracts import AnnotationCategory
+from lite_eval.errors import ConfigError, LiteEvalError
 from lite_eval.report.terminal import render_comparison, render_gate, render_run
 from lite_eval.runner import RunResult, rescore_run, run_suite
-from lite_eval.store import load_run, set_baseline
+from lite_eval.store import BASELINE_LOG, load_run, root_of, set_baseline
 
 app = typer.Typer(name="lite-eval", no_args_is_help=True, add_completion=False)
 baseline_app = typer.Typer(
@@ -143,4 +145,176 @@ def baseline_set(
     except LiteEvalError as exc:
         _fail(exc)
     typer.echo(f"baseline of {stored.record.suite.name}: {stored.record.run_id} ({path})")
-    typer.echo(f"commit {run_dir} and {path.name} with the code they gate (design §17)")
+    typer.echo(
+        f"commit {run_dir} and {path.name} (with {BASELINE_LOG}) with the code they gate "
+        "(design §17)"
+    )
+
+
+def _server_module() -> ModuleType:
+    try:
+        import lite_eval.server.run as server_run
+    except ImportError as exc:  # fastapi / uvicorn come with the `server` extra
+        _fail(
+            ConfigError(
+                f"the Viewer needs the server extra: pip install 'lite-eval[server]' ({exc})"
+            )
+        )
+    return server_run
+
+
+_STATIC_HELP = "Built frontend to serve (default: the one packaged with lite-eval)."
+
+
+@app.command()
+def view(
+    root: Annotated[
+        Path | None, typer.Option(help="Evaluation root (default: ., else ./evals).")
+    ] = None,
+    host: Annotated[str, typer.Option(help="Loopback address to listen on.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port to listen on.")] = 8720,
+    check: Annotated[
+        bool, typer.Option("--check", help="Start on a free port, request / and /api/health, exit.")
+    ] = False,
+    static: Annotated[Path | None, typer.Option(hidden=True, help=_STATIC_HELP)] = None,
+) -> None:
+    """The Viewer: runs, comparisons, cases, miss triage, datasets and trends (loopback only)."""
+    from lite_eval.server.paths import NO_FRONTEND, STATIC
+
+    server_run = _server_module()
+    static_dir = static or STATIC
+    try:
+        if check:
+            codes = server_run.check(root, static_dir)
+            typer.echo(f"view check: / {codes['/']}, /api/health {codes['/api/health']}")
+            if set(codes.values()) != {200}:
+                if codes["/"] == 503:
+                    typer.echo(NO_FRONTEND, err=True)
+                raise typer.Exit(3)
+            return
+        server_run.check_host(host)
+        resolved = server_run.resolve_root(root, Path.cwd())
+        if not (static_dir / "index.html").is_file():
+            typer.echo(f"warning: {NO_FRONTEND}", err=True)
+        typer.echo(f"lite-eval Viewer on http://{host}:{port}  (root {resolved}; Ctrl-C stops)")
+        server_run.serve(resolved, host, port, static_dir)
+    except LiteEvalError as exc:
+        _fail(exc)
+
+
+_CATEGORIES: dict[str, AnnotationCategory] = {
+    "r": "real_miss",
+    "l": "label_wrong",
+    "e": "excluded",
+    "u": "unclear",
+}
+
+
+def _short(value: object, limit: int = 400) -> str:
+    import json
+
+    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    return text if len(text) <= limit else text[:limit] + f"… ({len(text)} chars)"
+
+
+@app.command()
+def triage(
+    run_dir: Annotated[Path, typer.Argument(help="A run directory (runs/<suite>/<run_id>).")],
+) -> None:
+    """Classify this run's untriaged misses one by one (design §18.9); the Viewer does the same."""
+    from lite_eval.annotations import annotate
+    from lite_eval.views import untriaged
+
+    try:
+        record = load_run(run_dir, outputs=False).record
+        root = root_of(run_dir)
+        todo = untriaged(root, record.suite.name, record.run_id)
+    except LiteEvalError as exc:
+        _fail(exc)
+    if not todo:
+        typer.echo("nothing to triage: every miss of this run has a current annotation")
+        return
+    done = skipped = 0
+    for n, (row, case) in enumerate(todo, start=1):
+        typer.echo(
+            f"\n[{n}/{len(todo)}] {row.case_id}  {row.tags}  scores {row.scores}"
+            + (f"  error {row.error}" if row.error else "")
+        )
+        if case.content.case is not None:
+            if case.content.status == "changed":
+                typer.echo("  (the dataset changed since this run; showing today's content)")
+            typer.echo(f"  input:    {_short(case.content.case.input)}")
+            typer.echo(f"  expected: {_short(case.content.case.expected)}")
+        for o in case.outputs:
+            typer.echo(f"  output:   {_short(o.error.message if o.error else o.value)}")
+        if row.older_annotation:
+            typer.echo("  (an older version of this case was triaged before)")
+        choice = ""
+        while choice not in (*_CATEGORIES, "s", "q"):
+            # typer 0.29 vendors click, so a click.Choice is not a type its prompt accepts
+            choice = (
+                typer.prompt("  [r]eal miss, [l]abel wrong, [e]xcluded, [u]nclear, [s]kip, [q]uit")
+                .strip()
+                .lower()
+            )
+        if choice == "q":
+            break
+        if choice == "s":
+            skipped += 1
+            continue
+        note = typer.prompt("  note (optional)", default="", show_default=False)
+        try:
+            annotate(
+                root,
+                dataset=record.dataset.name,
+                case_id=row.case_id,
+                case_hash=case.case_hash,
+                run_id=record.run_id,
+                category=_CATEGORIES[choice],
+                note=note,
+            )
+        except LiteEvalError as exc:  # someone triaged it meanwhile, or a note over 4 KB
+            typer.echo(f"  not written: {exc}", err=True)
+            continue
+        done += 1
+    typer.echo(f"\n{done} triaged, {skipped} skipped")
+
+
+def _run_dirs(target: str) -> list[Path]:
+    """One run directory, or two joined by `..` (split where both sides are directories, so
+    relative paths such as ../runs/x keep working)."""
+    if Path(target).is_dir():
+        return [Path(target)]
+    for i in range(len(target)):
+        if target.startswith("..", i):
+            a, b = Path(target[:i]), Path(target[i + 2 :])
+            if target[:i] and target[i + 2 :] and a.is_dir() and b.is_dir():
+                return [a, b]
+    raise ConfigError(f"not a run directory or <baseline dir>..<candidate dir>: {target!r}")
+
+
+@app.command()
+def report(
+    target: Annotated[
+        str, typer.Argument(help="A run directory, or <baseline dir>..<candidate dir>.")
+    ],
+    html: Annotated[bool, typer.Option("--html", help="Write one self-contained HTML file.")],
+    out: Annotated[Path, typer.Option("-o", "--out", help="Output file.")],
+    redact: Annotated[
+        list[str] | None, typer.Option(help="Built-in rule to add; repeat it. Never removes one.")
+    ] = None,
+    static: Annotated[Path | None, typer.Option(hidden=True, help=_STATIC_HELP)] = None,
+) -> None:
+    """Export a run, or a comparison of two, as a page that opens with no server (design §10.2)."""
+    from lite_eval.report.html import render
+    from lite_eval.server.paths import STATIC
+
+    if not html:
+        _fail(ConfigError("only --html is supported"))
+    try:
+        page = render(static or STATIC, _run_dirs(target), redact or [])
+    except LiteEvalError as exc:
+        _fail(exc)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(page, encoding="utf-8")
+    typer.echo(f"wrote {out} ({len(page.encode()) // 1024} KB)")

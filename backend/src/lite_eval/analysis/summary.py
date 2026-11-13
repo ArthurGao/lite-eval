@@ -8,9 +8,10 @@ The denominator is always cases x repeats.
 
 from collections import Counter, defaultdict
 from collections.abc import Sequence
+from dataclasses import dataclass
 from statistics import fmean
 
-from lite_eval.contracts import Case, MetricSummary, Output, RunSummary, Score
+from lite_eval.contracts import Case, MetricSummary, Output, RunRecord, RunSummary, Score
 
 PASS_RATE = ":pass_rate"
 
@@ -40,6 +41,43 @@ def metric_values(
     if pass_rate:
         out[scorer + PASS_RATE] = passed
     return out
+
+
+@dataclass(frozen=True)
+class CaseResult:
+    """One case of a run, as the run's summary counts it (§18.1, §18.8)."""
+
+    miss: bool  # an output errored or was never generated, or a scorer failed (§18.9)
+    error: str | None  # the first error kind; "not_generated" for a repeat without an output
+    scores: dict[str, float]  # scorer -> mean over repeats, a missing repeat counting 0
+
+
+def case_results(
+    record: RunRecord, outputs: Sequence[Output], scores: Sequence[Score]
+) -> dict[str, CaseResult]:
+    """Every case of the run, in id order, including cases a partial run never reached."""
+    ids = sorted(record.case_hashes.keys() | {o.case_id for o in outputs})
+    means: dict[str, dict[str, float]] = {cid: {} for cid in ids}
+    for ref in record.scorers:
+        per_case = metric_values(scores, ref.name, ids, record.repeats)[ref.name]
+        for cid, values in per_case.items():
+            means[cid][ref.name] = fmean(values)
+    failed = {s.case_id for s in scores if s.passed is False or s.error is not None}
+    errors: dict[str, str] = {}
+    produced: dict[str, set[int]] = defaultdict(set)
+    for o in outputs:
+        produced[o.case_id].add(o.repeat)
+        if o.error is not None:
+            errors.setdefault(o.case_id, o.error.kind)
+    for cid in ids:
+        if len(produced[cid]) < record.repeats:
+            errors.setdefault(cid, "not_generated")
+    return {
+        cid: CaseResult(
+            miss=cid in failed or cid in errors, error=errors.get(cid), scores=means[cid]
+        )
+        for cid in ids
+    }
 
 
 def summarize(

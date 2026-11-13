@@ -277,3 +277,23 @@ def test_assert_gate_passes_silently_and_raises_run_and_config_errors(repo: Path
         assert_gate(run_suite(no_calls))
     with pytest.raises(ConfigError):
         assert_gate(run_suite(suite(repo, None)))
+
+
+def test_every_baseline_switch_is_logged(repo: Path) -> None:
+    from lite_eval.store import read_baseline_changes
+
+    first = set_baseline(repo, wrong=[])
+    s = suite(repo, [{"metric": "exact_match", "min": 0}], ["q01"])
+    assert runner.invoke(app, ["run", str(s)]).exit_code == 0
+    (second,) = [d for d in run_dirs(repo) if d != first]
+    assert runner.invoke(app, ["baseline", "set", str(second)]).exit_code == 0
+
+    changes = read_baseline_changes(repo / "evals")
+    assert [(c.suite, c.run_id, c.previous) for c in changes] == [
+        ("demo-suite", first.name, None),
+        ("demo-suite", second.name, first.name),
+    ]
+    assert changes[0].set_at <= changes[1].set_at
+    assert yaml.safe_load((repo / "evals" / "baselines.yaml").read_text()) == {
+        "demo-suite": second.name
+    }

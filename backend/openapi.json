@@ -1,0 +1,3003 @@
+{
+  "components": {
+    "schemas": {
+      "Annotation": {
+        "additionalProperties": false,
+        "description": "Design \u00a718.9. Written by the Viewer and `lite-eval triage` (E3).",
+        "properties": {
+          "annotation_id": {
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "author": {
+            "title": "Author",
+            "type": "string"
+          },
+          "case_hash": {
+            "title": "Case Hash",
+            "type": "string"
+          },
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "category": {
+            "enum": [
+              "real_miss",
+              "label_wrong",
+              "excluded",
+              "unclear"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dataset": {
+            "title": "Dataset",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "supersedes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes"
+          }
+        },
+        "required": [
+          "annotation_id",
+          "dataset",
+          "case_id",
+          "case_hash",
+          "category",
+          "author",
+          "created_at"
+        ],
+        "title": "Annotation",
+        "type": "object"
+      },
+      "AnnotationRequest": {
+        "additionalProperties": false,
+        "description": "What the page sends; the server adds the id, the author and the time (design \u00a718.9).",
+        "properties": {
+          "case_hash": {
+            "title": "Case Hash",
+            "type": "string"
+          },
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "category": {
+            "enum": [
+              "real_miss",
+              "label_wrong",
+              "excluded",
+              "unclear"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "dataset": {
+            "title": "Dataset",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "supersedes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes"
+          }
+        },
+        "required": [
+          "dataset",
+          "case_id",
+          "case_hash",
+          "category"
+        ],
+        "title": "AnnotationRequest",
+        "type": "object"
+      },
+      "BaselineChange": {
+        "additionalProperties": false,
+        "description": "One `lite-eval baseline set`, appended to `<root>/baselines.log.jsonl` (design \u00a712): the\nViewer's trends mark where a suite's baseline switched.",
+        "properties": {
+          "previous": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "set_at": {
+            "format": "date-time",
+            "title": "Set At",
+            "type": "string"
+          },
+          "suite": {
+            "title": "Suite",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite",
+          "run_id",
+          "set_at"
+        ],
+        "title": "BaselineChange",
+        "type": "object"
+      },
+      "CacheStats": {
+        "additionalProperties": false,
+        "properties": {
+          "hits": {
+            "default": 0,
+            "title": "Hits",
+            "type": "integer"
+          },
+          "misses": {
+            "default": 0,
+            "title": "Misses",
+            "type": "integer"
+          }
+        },
+        "title": "CacheStats",
+        "type": "object"
+      },
+      "Case": {
+        "additionalProperties": false,
+        "properties": {
+          "expected": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "tags": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "input"
+        ],
+        "title": "Case",
+        "type": "object"
+      },
+      "CaseChange": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline": {
+            "title": "Baseline",
+            "type": "number"
+          },
+          "candidate": {
+            "title": "Candidate",
+            "type": "number"
+          },
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "regressed",
+              "fixed",
+              "changed"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          }
+        },
+        "required": [
+          "case_id",
+          "metric",
+          "kind",
+          "baseline",
+          "candidate"
+        ],
+        "title": "CaseChange",
+        "type": "object"
+      },
+      "CaseContent": {
+        "additionalProperties": false,
+        "description": "`current`: the dataset holds the content the run saw; `changed`: it holds other content\nnow (shown); `missing`: the dataset or the case is gone.",
+        "properties": {
+          "case": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Case"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "current",
+              "changed",
+              "missing"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "case"
+        ],
+        "title": "CaseContent",
+        "type": "object"
+      },
+      "CaseDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Annotation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "case_hash": {
+            "title": "Case Hash",
+            "type": "string"
+          },
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "content": {
+            "$ref": "#/components/schemas/CaseContent"
+          },
+          "older_annotations": {
+            "items": {
+              "$ref": "#/components/schemas/Annotation"
+            },
+            "title": "Older Annotations",
+            "type": "array"
+          },
+          "other_runs": {
+            "items": {
+              "$ref": "#/components/schemas/OtherRun"
+            },
+            "title": "Other Runs",
+            "type": "array"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/Output"
+            },
+            "title": "Outputs",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/components/schemas/Score"
+            },
+            "title": "Scores",
+            "type": "array"
+          },
+          "suite": {
+            "title": "Suite",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite",
+          "run_id",
+          "case_id",
+          "case_hash",
+          "content",
+          "outputs",
+          "scores",
+          "annotation",
+          "older_annotations",
+          "other_runs"
+        ],
+        "title": "CaseDetail",
+        "type": "object"
+      },
+      "CasePage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CaseRow"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "CasePage",
+        "type": "object"
+      },
+      "CaseRow": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Annotation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "miss": {
+            "title": "Miss",
+            "type": "boolean"
+          },
+          "older_annotation": {
+            "title": "Older Annotation",
+            "type": "boolean"
+          },
+          "scores": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Scores",
+            "type": "object"
+          },
+          "tags": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "object"
+          }
+        },
+        "required": [
+          "case_id",
+          "tags",
+          "miss",
+          "error",
+          "scores",
+          "annotation",
+          "older_annotation"
+        ],
+        "title": "CaseRow",
+        "type": "object"
+      },
+      "CiRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "ci_mode": {
+            "default": false,
+            "title": "Ci Mode",
+            "type": "boolean"
+          },
+          "paid_allowed": {
+            "default": false,
+            "title": "Paid Allowed",
+            "type": "boolean"
+          }
+        },
+        "title": "CiRecord",
+        "type": "object"
+      },
+      "Comparison": {
+        "additionalProperties": false,
+        "properties": {
+          "added_cases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Added Cases",
+            "type": "array"
+          },
+          "baseline_run": {
+            "title": "Baseline Run",
+            "type": "string"
+          },
+          "candidate_run": {
+            "title": "Candidate Run",
+            "type": "string"
+          },
+          "case_weight": {
+            "title": "Case Weight",
+            "type": "number"
+          },
+          "changed_cases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed Cases",
+            "type": "array"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/CaseChange"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "dataset": {
+            "title": "Dataset",
+            "type": "string"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/MetricDelta"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "overlap": {
+            "enum": [
+              "full",
+              "partial_overlap"
+            ],
+            "title": "Overlap",
+            "type": "string"
+          },
+          "removed_cases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed Cases",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/RunWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "baseline_run",
+          "candidate_run",
+          "dataset",
+          "overlap",
+          "case_weight",
+          "metrics",
+          "changes"
+        ],
+        "title": "Comparison",
+        "type": "object"
+      },
+      "CostSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "calls": {
+            "default": 0,
+            "title": "Calls",
+            "type": "integer"
+          },
+          "cost_usd": {
+            "default": 0.0,
+            "title": "Cost Usd",
+            "type": "number"
+          },
+          "input_tokens": {
+            "default": 0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "latency_p50_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency P50 Ms"
+          },
+          "latency_p95_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency P95 Ms"
+          },
+          "output_tokens": {
+            "default": 0,
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "reasoning_tokens": {
+            "default": 0,
+            "title": "Reasoning Tokens",
+            "type": "integer"
+          },
+          "usage_unknown": {
+            "default": 0,
+            "title": "Usage Unknown",
+            "type": "integer"
+          }
+        },
+        "title": "CostSummary",
+        "type": "object"
+      },
+      "DatasetCase": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Annotation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "case": {
+            "$ref": "#/components/schemas/Case"
+          },
+          "case_hash": {
+            "title": "Case Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "case",
+          "case_hash",
+          "annotation"
+        ],
+        "title": "DatasetCase",
+        "type": "object"
+      },
+      "DatasetCasePage": {
+        "additionalProperties": false,
+        "properties": {
+          "dataset": {
+            "$ref": "#/components/schemas/DatasetSummary"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetCase"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dataset",
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "DatasetCasePage",
+        "type": "object"
+      },
+      "DatasetChange": {
+        "additionalProperties": false,
+        "description": "The first point of a trend measured on another dataset content than the point before.",
+        "properties": {
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "previous_version": {
+            "title": "Previous Version",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "version",
+          "hash",
+          "previous_version"
+        ],
+        "title": "DatasetChange",
+        "type": "object"
+      },
+      "DatasetRef": {
+        "additionalProperties": false,
+        "properties": {
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pack": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pack"
+          },
+          "synthetic": {
+            "default": false,
+            "title": "Synthetic",
+            "type": "boolean"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "hash"
+        ],
+        "title": "DatasetRef",
+        "type": "object"
+      },
+      "DatasetSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "license": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "License"
+          },
+          "n_cases": {
+            "title": "N Cases",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pack": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pack"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "synthetic": {
+            "title": "Synthetic",
+            "type": "boolean"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "hash",
+          "pack",
+          "description",
+          "license",
+          "synthetic",
+          "n_cases",
+          "path"
+        ],
+        "title": "DatasetSummary",
+        "type": "object"
+      },
+      "ErrorInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "timeout",
+              "exception",
+              "truncated",
+              "invalid_output",
+              "http_status"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "message"
+        ],
+        "title": "ErrorInfo",
+        "type": "object"
+      },
+      "GateRule": {
+        "additionalProperties": false,
+        "description": "Design \u00a78.4, \u00a718.19: an absolute bound (`min` / `max`) or a drop against the baseline.",
+        "properties": {
+          "baseline_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Note"
+          },
+          "compare_to": {
+            "anyOf": [
+              {
+                "const": "baseline",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compare To"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "max_drop": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drop"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "require_significant": {
+            "default": false,
+            "title": "Require Significant",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "metric"
+        ],
+        "title": "GateRule",
+        "type": "object"
+      },
+      "GateSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_partial": {
+            "default": false,
+            "title": "Allow Partial",
+            "type": "boolean"
+          },
+          "allow_partial_overlap": {
+            "default": false,
+            "title": "Allow Partial Overlap",
+            "type": "boolean"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/GateRule"
+            },
+            "minItems": 1,
+            "title": "Rules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rules"
+        ],
+        "title": "GateSpec",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "const": "ok",
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "Health",
+        "type": "object"
+      },
+      "JsonValue": {},
+      "JudgeRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "prompt_version": {
+            "title": "Prompt Version",
+            "type": "string"
+          },
+          "raw": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "temperature": {
+            "title": "Temperature",
+            "type": "number"
+          }
+        },
+        "required": [
+          "role",
+          "model",
+          "channel",
+          "prompt_version",
+          "temperature"
+        ],
+        "title": "JudgeRecord",
+        "type": "object"
+      },
+      "MetricDelta": {
+        "additionalProperties": false,
+        "description": "One metric of a comparison (design \u00a78.2, \u00a718.2, \u00a718.3).",
+        "properties": {
+          "baseline": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline"
+          },
+          "candidate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate"
+          },
+          "ci_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci High"
+          },
+          "ci_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Low"
+          },
+          "delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta"
+          },
+          "discordant": {
+            "default": 0,
+            "title": "Discordant",
+            "type": "integer"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "n": {
+            "default": 0,
+            "title": "N",
+            "type": "integer"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Value"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "significant": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Significant"
+          },
+          "status": {
+            "enum": [
+              "compared",
+              "incomparable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "test": {
+            "anyOf": [
+              {
+                "enum": [
+                  "mcnemar",
+                  "bootstrap"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test"
+          },
+          "within_noise": {
+            "default": false,
+            "title": "Within Noise",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "metric",
+          "status"
+        ],
+        "title": "MetricDelta",
+        "type": "object"
+      },
+      "MetricSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "max": {
+            "title": "Max",
+            "type": "number"
+          },
+          "min": {
+            "title": "Min",
+            "type": "number"
+          },
+          "per_repeat": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Per Repeat",
+            "type": "array"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "value",
+          "min",
+          "max",
+          "per_repeat"
+        ],
+        "title": "MetricSummary",
+        "type": "object"
+      },
+      "OtherRun": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "title": "Config",
+            "type": "string"
+          },
+          "miss": {
+            "title": "Miss",
+            "type": "boolean"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scores": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Scores",
+            "type": "object"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "suite": {
+            "title": "Suite",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite",
+          "run_id",
+          "config",
+          "started_at",
+          "miss",
+          "scores"
+        ],
+        "title": "OtherRun",
+        "type": "object"
+      },
+      "Output": {
+        "additionalProperties": false,
+        "properties": {
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "repeat": {
+            "default": 0,
+            "title": "Repeat",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "trace": {
+            "$ref": "#/components/schemas/Trace"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonValue"
+          }
+        },
+        "required": [
+          "case_id"
+        ],
+        "title": "Output",
+        "type": "object"
+      },
+      "Provenance": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author"
+          },
+          "created": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created"
+          },
+          "license": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "License"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "synthetic": {
+            "default": false,
+            "title": "Synthetic",
+            "type": "boolean"
+          }
+        },
+        "title": "Provenance",
+        "type": "object"
+      },
+      "RedactConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "patterns": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Patterns",
+            "type": "object"
+          },
+          "rules": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Rules",
+            "type": "array"
+          }
+        },
+        "title": "RedactConfig",
+        "type": "object"
+      },
+      "RunDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline": {
+            "title": "Baseline",
+            "type": "boolean"
+          },
+          "record": {
+            "$ref": "#/components/schemas/RunRecord"
+          }
+        },
+        "required": [
+          "record",
+          "baseline"
+        ],
+        "title": "RunDetail",
+        "type": "object"
+      },
+      "RunPage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunRow"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "RunPage",
+        "type": "object"
+      },
+      "RunRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "cache": {
+            "$ref": "#/components/schemas/CacheStats"
+          },
+          "case_hashes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Case Hashes",
+            "type": "object"
+          },
+          "ci": {
+            "$ref": "#/components/schemas/CiRecord"
+          },
+          "concurrency": {
+            "title": "Concurrency",
+            "type": "integer"
+          },
+          "cost": {
+            "$ref": "#/components/schemas/CostSummary"
+          },
+          "dataset": {
+            "$ref": "#/components/schemas/DatasetRef"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "title": "Finished At",
+            "type": "string"
+          },
+          "gate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GateSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "git_dirty": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Dirty"
+          },
+          "git_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Sha"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "lite_eval_version": {
+            "title": "Lite Eval Version",
+            "type": "string"
+          },
+          "redact": {
+            "$ref": "#/components/schemas/RedactConfig"
+          },
+          "repeats": {
+            "title": "Repeats",
+            "type": "integer"
+          },
+          "rescored_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rescored From"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "scorers": {
+            "items": {
+              "$ref": "#/components/schemas/ScorerRef"
+            },
+            "title": "Scorers",
+            "type": "array"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "complete",
+              "partial",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "suite": {
+            "$ref": "#/components/schemas/SuiteRef"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/RunSummary"
+          },
+          "target": {
+            "$ref": "#/components/schemas/TargetRecord"
+          },
+          "timeout_s": {
+            "title": "Timeout S",
+            "type": "number"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/RunWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "run_id",
+          "suite",
+          "target",
+          "dataset",
+          "scorers",
+          "repeats",
+          "seed",
+          "concurrency",
+          "timeout_s",
+          "started_at",
+          "finished_at",
+          "host",
+          "lite_eval_version",
+          "status",
+          "summary",
+          "cost"
+        ],
+        "title": "RunRecord",
+        "type": "object"
+      },
+      "RunRow": {
+        "additionalProperties": false,
+        "description": "One run as the Runs page lists it.",
+        "properties": {
+          "baseline": {
+            "default": false,
+            "title": "Baseline",
+            "type": "boolean"
+          },
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "case_weight": {
+            "title": "Case Weight",
+            "type": "number"
+          },
+          "config": {
+            "title": "Config",
+            "type": "string"
+          },
+          "cost_usd": {
+            "title": "Cost Usd",
+            "type": "number"
+          },
+          "dataset": {
+            "title": "Dataset",
+            "type": "string"
+          },
+          "dataset_hash": {
+            "title": "Dataset Hash",
+            "type": "string"
+          },
+          "dataset_version": {
+            "title": "Dataset Version",
+            "type": "string"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "title": "Finished At",
+            "type": "string"
+          },
+          "git_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Sha"
+          },
+          "latency_p50_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency P50 Ms"
+          },
+          "latency_p95_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency P95 Ms"
+          },
+          "metrics": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Metrics",
+            "type": "object"
+          },
+          "n_cases": {
+            "title": "N Cases",
+            "type": "integer"
+          },
+          "pack": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pack"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scoring_errors": {
+            "title": "Scoring Errors",
+            "type": "integer"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "complete",
+              "partial",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "suite": {
+            "title": "Suite",
+            "type": "string"
+          },
+          "synthetic": {
+            "title": "Synthetic",
+            "type": "boolean"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "target_errors": {
+            "title": "Target Errors",
+            "type": "integer"
+          },
+          "warnings": {
+            "title": "Warnings",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "suite",
+          "run_id",
+          "config",
+          "target",
+          "dataset",
+          "dataset_version",
+          "dataset_hash",
+          "pack",
+          "synthetic",
+          "status",
+          "started_at",
+          "finished_at",
+          "git_sha",
+          "metrics",
+          "n_cases",
+          "case_weight",
+          "calls",
+          "cost_usd",
+          "latency_p50_ms",
+          "latency_p95_ms",
+          "warnings",
+          "target_errors",
+          "scoring_errors"
+        ],
+        "title": "RunRow",
+        "type": "object"
+      },
+      "RunSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "case_weight": {
+            "title": "Case Weight",
+            "type": "number"
+          },
+          "groups": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              "type": "object"
+            },
+            "title": "Groups",
+            "type": "object"
+          },
+          "metrics": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MetricSummary"
+            },
+            "title": "Metrics",
+            "type": "object"
+          },
+          "n_cases": {
+            "title": "N Cases",
+            "type": "integer"
+          },
+          "outputs_expected": {
+            "title": "Outputs Expected",
+            "type": "integer"
+          },
+          "outputs_recorded": {
+            "title": "Outputs Recorded",
+            "type": "integer"
+          },
+          "repeats": {
+            "title": "Repeats",
+            "type": "integer"
+          },
+          "scoring_errors": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Scoring Errors",
+            "type": "object"
+          },
+          "target_errors": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Target Errors",
+            "type": "object"
+          }
+        },
+        "required": [
+          "n_cases",
+          "repeats",
+          "case_weight",
+          "outputs_expected",
+          "outputs_recorded"
+        ],
+        "title": "RunSummary",
+        "type": "object"
+      },
+      "RunWarning": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "RunWarning",
+        "type": "object"
+      },
+      "Score": {
+        "additionalProperties": false,
+        "properties": {
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScoreError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "judge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JudgeRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "passed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passed"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "repeat": {
+            "default": 0,
+            "title": "Repeat",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "scorer": {
+            "title": "Scorer",
+            "type": "string"
+          },
+          "scorer_version": {
+            "title": "Scorer Version",
+            "type": "string"
+          },
+          "value": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "case_id",
+          "scorer",
+          "scorer_version",
+          "value"
+        ],
+        "title": "Score",
+        "type": "object"
+      },
+      "ScoreError": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "scorer_exception",
+              "invalid_judge_output",
+              "judge_call_failed"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "message"
+        ],
+        "title": "ScoreError",
+        "type": "object"
+      },
+      "ScorerRef": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "enum": [
+                  "value",
+                  "separate",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ],
+        "title": "ScorerRef",
+        "type": "object"
+      },
+      "Span": {
+        "additionalProperties": false,
+        "properties": {
+          "attrs": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Attrs",
+            "type": "object"
+          },
+          "duration_ms": {
+            "default": 0.0,
+            "title": "Duration Ms",
+            "type": "number"
+          },
+          "input": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "output": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "start_ms": {
+            "default": 0.0,
+            "title": "Start Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "Span",
+        "type": "object"
+      },
+      "SuiteRef": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SuiteRef",
+        "type": "object"
+      },
+      "TargetRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "billing": {
+            "default": "unknown",
+            "enum": [
+              "free",
+              "subscription",
+              "per_token",
+              "unknown"
+            ],
+            "title": "Billing",
+            "type": "string"
+          },
+          "config": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Config",
+            "type": "object"
+          },
+          "info": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Info",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "versions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Versions",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "config"
+        ],
+        "title": "TargetRecord",
+        "type": "object"
+      },
+      "Trace": {
+        "additionalProperties": false,
+        "properties": {
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "latency_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Scope"
+          },
+          "spans": {
+            "items": {
+              "$ref": "#/components/schemas/Span"
+            },
+            "title": "Spans",
+            "type": "array"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Usage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "Trace",
+        "type": "object"
+      },
+      "Trend": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline_changes": {
+            "items": {
+              "$ref": "#/components/schemas/BaselineChange"
+            },
+            "title": "Baseline Changes",
+            "type": "array"
+          },
+          "dataset_changes": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetChange"
+            },
+            "title": "Dataset Changes",
+            "type": "array"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/TrendPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "suite": {
+            "title": "Suite",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite",
+          "metric",
+          "points",
+          "baseline_changes",
+          "dataset_changes"
+        ],
+        "title": "Trend",
+        "type": "object"
+      },
+      "TrendPoint": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline": {
+            "title": "Baseline",
+            "type": "boolean"
+          },
+          "config": {
+            "title": "Config",
+            "type": "string"
+          },
+          "dataset_hash": {
+            "title": "Dataset Hash",
+            "type": "string"
+          },
+          "dataset_version": {
+            "title": "Dataset Version",
+            "type": "string"
+          },
+          "git_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Sha"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "run_id",
+          "config",
+          "started_at",
+          "git_sha",
+          "value",
+          "dataset_version",
+          "dataset_hash",
+          "baseline"
+        ],
+        "title": "TrendPoint",
+        "type": "object"
+      },
+      "Usage": {
+        "additionalProperties": false,
+        "properties": {
+          "cost_usd": {
+            "default": 0.0,
+            "title": "Cost Usd",
+            "type": "number"
+          },
+          "input_tokens": {
+            "default": 0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "default": 0,
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "reasoning_tokens": {
+            "default": 0,
+            "title": "Reasoning Tokens",
+            "type": "integer"
+          }
+        },
+        "title": "Usage",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "lite-eval Viewer",
+    "version": "0.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/annotations": {
+      "get": {
+        "operationId": "list_annotations_api_annotations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dataset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dataset"
+            }
+          },
+          {
+            "in": "query",
+            "name": "case_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Annotation"
+                  },
+                  "title": "Response List Annotations Api Annotations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Annotations"
+      },
+      "post": {
+        "operationId": "create_annotation_api_annotations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnotationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Annotation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Annotation"
+      }
+    },
+    "/api/compare": {
+      "get": {
+        "operationId": "compare_runs_api_compare_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "baseline",
+            "required": true,
+            "schema": {
+              "title": "Baseline",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "candidate",
+            "required": true,
+            "schema": {
+              "title": "Candidate",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Comparison"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compare Runs"
+      }
+    },
+    "/api/datasets": {
+      "get": {
+        "operationId": "list_datasets_api_datasets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DatasetSummary"
+                  },
+                  "title": "Response List Datasets Api Datasets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Datasets"
+      }
+    },
+    "/api/datasets/{name}/cases": {
+      "get": {
+        "operationId": "list_dataset_cases_api_datasets__name__cases_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetCasePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Dataset Cases"
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/api/runs": {
+      "get": {
+        "operationId": "list_runs_api_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "suite",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Suite"
+            }
+          },
+          {
+            "in": "query",
+            "name": "config",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Config"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "complete",
+                    "partial",
+                    "failed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pack",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pack"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dataset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dataset"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dataset_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dataset Version"
+            }
+          },
+          {
+            "in": "query",
+            "name": "baseline",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Baseline"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Runs"
+      }
+    },
+    "/api/runs/{suite}/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_runs__suite___run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite",
+            "required": true,
+            "schema": {
+              "title": "Suite",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Run"
+      }
+    },
+    "/api/runs/{suite}/{run_id}/cases": {
+      "get": {
+        "operationId": "list_cases_api_runs__suite___run_id__cases_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite",
+            "required": true,
+            "schema": {
+              "title": "Suite",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "misses_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Misses Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CasePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Cases"
+      }
+    },
+    "/api/runs/{suite}/{run_id}/cases/{case_id}": {
+      "get": {
+        "operationId": "get_case_api_runs__suite___run_id__cases__case_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite",
+            "required": true,
+            "schema": {
+              "title": "Suite",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Case"
+      }
+    },
+    "/api/trends": {
+      "get": {
+        "operationId": "trend_api_trends_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "suite",
+            "required": true,
+            "schema": {
+              "title": "Suite",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "metric",
+            "required": true,
+            "schema": {
+              "title": "Metric",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "config",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Config"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Trend"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trend"
+      }
+    }
+  }
+}

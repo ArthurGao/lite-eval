@@ -24,6 +24,16 @@ def atomic_write(path: Path, text: str, *, durable: bool = True) -> None:
     os.replace(tmp, path)
 
 
+def append_jsonl(path: Path, record: BaseModel) -> None:
+    """Append one record as a line and fsync it (annotations, the baseline log): an append-only
+    log a crash must not shorten."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(record.model_dump_json() + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+
+
 def read_jsonl[M: BaseModel](path: Path, model: type[M]) -> list[M]:
     """One model per non-blank line; a bad line is a ConfigError naming the file and line."""
     out = []

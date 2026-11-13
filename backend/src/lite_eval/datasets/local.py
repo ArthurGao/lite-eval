@@ -136,14 +136,24 @@ def _scan_secrets(meta: DatasetMeta, cases: list[Case]) -> list[RunWarning]:
     return warnings
 
 
-def load_dataset(root: Path) -> Dataset:
+def read_meta(root: Path) -> DatasetMeta:
     meta_path = root / "dataset.yaml"
     if not meta_path.is_file():
         raise ConfigError(f"not a dataset directory (no dataset.yaml): {root}")
     try:
-        meta = DatasetMeta.model_validate(yaml.safe_load(meta_path.read_text(encoding="utf-8")))
+        return DatasetMeta.model_validate(yaml.safe_load(meta_path.read_text(encoding="utf-8")))
     except (yaml.YAMLError, ValidationError) as exc:
         raise ConfigError(f"{meta_path}: {exc}") from exc
+
+
+def read_cases(root: Path) -> dict[str, Case]:
+    """Only cases.jsonl, by id: no corpus hash and no secret scan (`load_dataset` gates a run
+    on both; the Viewer only shows content already loaded once)."""
+    return {c.id: c for c in _read_cases(root / "cases.jsonl")}
+
+
+def load_dataset(root: Path) -> Dataset:
+    meta = read_meta(root)
     cases = _read_cases(root / "cases.jsonl")
     warnings = _scan_secrets(meta, cases)
     case_hashes = {c.id: c.content_hash() for c in cases}

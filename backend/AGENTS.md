@@ -23,11 +23,14 @@ backend/
     cache.py                  # output cache (design §18.5)
     runner.py                 # two-phase execution (design §6)
     store.py  index.py        # run directories (truth) and the Viewer's SQLite index (rebuildable)
+    annotations.py            # append-only annotations under a file lock (design §18.9)
+    views.py                  # what the Viewer and the HTML export show (design §18.22)
     analysis/                 # summary, compare (McNemar, bootstrap, comparability), gate
     api.py                    # compare_runs, gate_results, assert_gate (design §11.3)
     report/                   # terminal, html, kb
     redact.py
-    server/                   # FastAPI: read-only API + annotations; static/ = frontend build (copied, gitignored)
+    server/                   # FastAPI: guard.py (§18.10), app.py (routes), run.py (view, --check),
+                              # paths.py; static/ = frontend build (copied, gitignored)
     prompts/*.j2
     cli.py  pytest_plugin.py
   tests/
@@ -35,6 +38,8 @@ backend/
     data/records/v1/          # committed run directory of schema_version 1 (must keep loading)
     unit/  integration/  e2e/ # e2e: real subprocess and HTTP targets against local fake servers
   examples/                   # one minimal target per access method + a tiny dataset
+  scripts/dump_openapi.py     # writes openapi.json, the frontend's contract (`--check` runs in pytest)
+  openapi.json                # committed; regenerate after any route or response model change
 ```
 
 FakeTarget lives in the package (`lite_eval/targets/fake.py`) so suites and examples can use it too;
@@ -42,10 +47,11 @@ FakeJudge joins it in E5.
 
 ## Layering
 
-- `contracts` imports nothing else from the package except `canonical`. `analysis/` and `report/` read contracts only; they never call
-  a target or a judge.
+- `contracts` imports nothing else from the package except `canonical`. `analysis/` and `report/terminal.py` read
+  contracts only; `report/html.py` reads run directories through `views`. None of them calls a target or a judge.
 - `runner` is the only module that calls targets; `scorers/judge.py` is the only module that calls a model.
-- `server/` reads through `store` and `index`; it never runs a suite. Its only write is an annotation.
+- `server/` reads through `views`, `store` and `index`; it never runs a suite. Its only write is an annotation
+  (`annotations.append_annotation`, shared with `lite-eval triage`).
 - `cli.py` and `pytest_plugin.py` are thin: they parse arguments and call the public API in `__init__.py`.
 
 ## Rules
@@ -75,4 +81,5 @@ uv run pytest
 uv run pytest -m ollama
 uv run ruff check && uv run ruff format --check && uv run mypy
 uv run lite-eval --help
+uv run python scripts/dump_openapi.py   # after a server route or schema change
 ```

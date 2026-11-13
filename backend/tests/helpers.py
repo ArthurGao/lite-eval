@@ -9,6 +9,7 @@ import yaml
 if TYPE_CHECKING:
     from lite_eval.runner import RunOptions, RunResult
     from lite_eval.targets.base import Target
+    from lite_eval.targets.fake import FakeTarget
 
 
 def write_dataset(
@@ -91,3 +92,34 @@ def execute_suite(
     suite = load_suite(write_suite(root, **spec))
     dataset = load_dataset(suite.dataset_path)
     return asyncio.run(execute(suite, dataset, targets, options or RunOptions()))
+
+
+def wrong(*ids: str) -> "FakeTarget":
+    """A fake that answers every case right except `ids`."""
+    from lite_eval.targets.fake import FakeTarget, Step
+
+    # The config names the behaviour: two different fakes must not share cache entries.
+    return FakeTarget(
+        steps={i: Step(value="no", echo_expected=False) for i in ids},
+        config={"wrong": sorted(ids)},
+    )
+
+
+def execute_one(root: Path, config: str, target: "Target", **spec: Any) -> "RunResult":
+    """execute_suite with one target config; returns its run."""
+    (result,) = execute_suite(root, [(config, target)], **spec)
+    return result
+
+
+def write_static(directory: Path, js: str = "console.log(1)") -> Path:
+    """A stand-in for the frontend build, in Vite's shape: index.html + one JS + one CSS."""
+    (directory / "assets").mkdir(parents=True)
+    (directory / "index.html").write_text(
+        "<!doctype html><html><head><title>lite-eval</title>"
+        '<script type="module" crossorigin src="/assets/index-abc123.js"></script>'
+        '<link rel="stylesheet" crossorigin href="/assets/index-def456.css">'
+        '</head><body><div id="root"></div></body></html>'
+    )
+    (directory / "assets" / "index-abc123.js").write_text(js)
+    (directory / "assets" / "index-def456.css").write_text("body{color:#111}")
+    return directory
