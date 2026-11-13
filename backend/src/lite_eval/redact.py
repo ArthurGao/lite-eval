@@ -28,18 +28,20 @@ def _mark(rule: str) -> str:
 
 _MARK_TAIL = r"(?!«redacted)"  # never re-redact a marker
 
-# Each pattern has a `pre` group (kept) and a `secret` group (replaced by the marker).
+# Each pattern has a `pre` group (kept) and a `secret` group (replaced by the marker). Every run
+# that a match may start at many positions is bounded (RFC lengths where one exists): an unbounded
+# one made redaction quadratic on adversarial text (E1 security review, measured).
 _CONNECTION = (
     # scheme://user:PASSWORD@host — the password may hold an unencoded '@' or '/', so it runs to
     # the '@' that is followed by a host and then a delimiter or the end.
     re.compile(
-        r"(?P<pre>\b[a-zA-Z][a-zA-Z0-9+.-]*://[^\s:/@]*:)"
+        r"(?P<pre>\b[a-zA-Z][a-zA-Z0-9+.-]{0,31}://[^\s:/@]{0,256}:)"
         + _MARK_TAIL
-        + r"(?P<secret>\S+?)(?=@[^\s@/?#]+(?:[/?#\s]|$))"
+        + r"(?P<secret>\S{1,256}?)(?=@[^\s@/?#]{1,255}(?:[/?#\s]|$))"
     ),
     # ?sslpassword=VALUE&
     re.compile(
-        r"(?P<pre>[?&][\w.-]*password=)" + _MARK_TAIL + r"(?P<secret>[^\s&#]+)", re.IGNORECASE
+        r"(?P<pre>[?&][\w.-]{0,64}password=)" + _MARK_TAIL + r"(?P<secret>[^\s&#]+)", re.IGNORECASE
     ),
     # password='a b' / PGPASSWORD=x / db_password = "y"
     re.compile(
@@ -63,7 +65,11 @@ _API_KEYS = (
     ),
 )
 
-_EMAILS = (re.compile(r"(?P<pre>)(?P<secret>\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)"),)
+_EMAILS = (
+    re.compile(
+        r"(?P<pre>)(?P<secret>\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}\b)"
+    ),
+)
 
 _BUILTIN: dict[str, tuple[re.Pattern[str], ...]] = {
     "connection_strings": _CONNECTION,

@@ -130,3 +130,23 @@ def test_no_rules_changes_nothing() -> None:
 )
 def test_api_key_values_stop_at_closing_delimiters(text: str, expected: str) -> None:
     assert KEYS.text(text) == expected
+
+
+ADVERSARIAL = {
+    # Each starts a match attempt at many positions; an unbounded run makes that quadratic.
+    "many url starts": "a://b:" * 17_000,
+    "dotted run": "a." * 50_000,
+    "hyphenated run": "a-" * 50_000,
+}
+
+
+@pytest.mark.parametrize("name", sorted(ADVERSARIAL))
+def test_redaction_stays_linear_on_adversarial_text(name: str) -> None:
+    import time
+
+    redactor = Redactor(rules=("connection_strings", "api_keys", "emails"))
+    started = time.perf_counter()
+    redactor.text(ADVERSARIAL[name])
+
+    # ~100 KB: linear takes milliseconds; the quadratic patterns took 10 s or more.
+    assert time.perf_counter() - started < 2.0
