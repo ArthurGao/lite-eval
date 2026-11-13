@@ -1,0 +1,36 @@
+# macOS / editors
+.DS_Store
+.idea/
+*.swp
+
+# A global excludesfile hides CLAUDE.md on this machine; agent guides are tracked here.
+!CLAUDE.md
+!**/CLAUDE.md
+
+# Secrets: only .env.example is tracked
+.env*
+!.env.example
+!**/.env.example
+
+# Python (backend/)
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+backend/src/lite_eval/server/static/
+
+# Node (frontend/)
+node_modules/
+frontend/dist/
+playwright-report/
+test-results/
+
+# lite-eval's own working data
+.lite-eval/
