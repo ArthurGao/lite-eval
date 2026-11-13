@@ -46,8 +46,6 @@ backend/
 2. **The cache key is everything that decides the output** (design §18.5): target config (incl. thinking / effort),
    `versions()` (engine, model snapshot, prompt version), case hash, repeat index. A value that changes the output but
    is missing from `config()` / `versions()` is a bug. Hashing is canonical JSON (§18.6), everywhere.
-9. **Design §18 is the tie-breaker**: repeats, statistics, comparability, exit codes, failures, annotations, Viewer
-   security, HTTP/subprocess targets, redaction, the CI billing guard, packaging and the index are specified there.
 3. **Statistics are tested against hand-computed examples** (McNemar exact p-values, bootstrap with a fixed seed).
    Ranking metrics are cross-checked against ranx in a test, the way lite-rag did.
 4. **Failure paths are first-class.** Every target access method has tests for timeout, exception, truncated and
@@ -56,6 +54,9 @@ backend/
 6. **Time budgets in tests are generous** (10 s default); tests about timeouts set their own (L32).
 7. **The Viewer API binds loopback only** and refuses to start otherwise; test it like llm-gateway does.
 8. Typed throughout (`mypy --strict` on `src/`); async where a target or a judge is called.
+9. **Design §18 is the tie-breaker**: repeats, statistics, comparability, exit codes, failures, annotations, Viewer
+   security, HTTP/subprocess targets, redaction, the CI billing guard, packaging, the index, setup sharing and gate
+   semantics are specified there.
 
 ## Commands
 

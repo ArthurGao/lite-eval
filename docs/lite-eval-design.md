@@ -71,7 +71,7 @@ lite-rag 管文档知识，lite-mem 管关于人的记忆，lite-eval 衡量它�
 | R9 | 数据集（含标注）有版本和哈希；改了标注就是新版本，和旧运行比较时按 §18.3 处理；人的归类（Annotation）只追加、可更正，不改数据集 | L1、L9 |
 | R10 | 确定性评分器优先；模型评审必须先用带标签的校准集测出一致率，并把评审的模型、提示词版本和温度固定写进记录 | L2、L3 |
 | R11 | 门禁：CLI 以非零码退出，pytest 断言失败时打印退步的用例；退出码必须如实 | L22 |
-| R12 | 预算：费用和调用次数有上限；CI 模式下拒绝订阅 profile 和按 token 计费的 profile，除非 Suite 明确允许 | L7、L24 |
+| R12 | 预算：费用和调用次数有上限；CI 模式下拒绝一切不能确认免费的调用，除非环境变量和 Suite 同时放行（§18.13） | L7、L24 |
 | R13 | 自检：配置差别很大但分数完全一样时给出警告；所有配置都没触发被测功能时提示“数据集可能没覆盖这个功能”；排名指标用第二种实现交叉核对 | L10、L13 |
 | R14 | 可比性：相同索引配置共用一次 setup；计时前预热；延迟口径由被测系统声明；配置顺序不影响结果 | L15、L16 |
 | R15 | Trace 记录决策，不只记最终输出：检索命中、工具调用、模型调用，以及“为什么没做”（例如判为重复而丢弃） | L17 |
@@ -246,7 +246,7 @@ Dataset ──▶ Target ──▶ Output + Trace ──▶ Scorer ──▶ Run
 | --- | --- |
 | Case | 一个用例：输入、期望、标签、来源 |
 | Dataset | 一组用例，有名字、版本和内容哈希 |
-| Target | 被测系统的一个配置：`run(input) → Output（含 Trace）` |
+| Target | 被测系统的一个配置：`run(case) → Output（含 Trace）` |
 | Trace | 被测系统的中间过程：检索命中、工具调用、模型调用、决策和理由、token、耗时、费用 |
 | Scorer | 评分器：`score(case, output) → Score` |
 | Pack | 一种任务类型的默认组合：`expected` 的格式 + 默认评分器 + 汇总指标 + Viewer 里的展示方式 |
@@ -287,8 +287,9 @@ class Target(Protocol):
     def versions(self) -> dict[str, str]: ...          # 影响输出的版本：引擎、模型快照、提示词；进缓存键（§18.5）
     def info(self) -> dict[str, str]: ...              # 只记录：git sha、主机、调用通道；不进缓存键
     def billing(self) -> Literal["free", "subscription", "per_token", "unknown"]: ...   # CI 守卫（§18.13）
-    def setup_identity(self) -> dict[str, Any]: ...    # 相同的值共用一次 setup（例如索引配置）
+    def setup_identity(self) -> dict[str, Any]: ...    # 相同的值共用一次 setup（例如索引配置；§18.18）
     async def setup(self, dataset: Dataset) -> None: ...   # 建索引、灌数据；不计时
+    # 可选：async def share_setup_from(self, leader: "Target") -> None   # 接过另一个实例建好的 setup（§18.18）
     async def run(self, case: Case) -> Output: ...
     async def teardown(self) -> None: ...
 ```
@@ -299,7 +300,7 @@ class Target(Protocol):
 | --- | --- | --- |
 | Python | Python 应用 | 实现上面的协议；lite-eval 只作为开发依赖 |
 | HTTP | 任何有 API 的应用（TS、Go……） | Suite 里写 URL、请求模板（Jinja2，变量是 `case.input`），以及从响应里取 `output` 和 `trace` 的 JSONPath |
-| 子进程 | 命令行工具、其他语言 | 每个用例往 stdin 写一行 JSON `{"case": …}`，从 stdout 读一行 `{"output": …, "trace": …}`；进程常驻，跑完所有用例 |
+| 子进程 | 命令行工具、其他语言 | 每个用例往 stdin 写一行 JSON `{"case": …, "repeat": n}`，从 stdout 读一行 `{"case_id": …, "repeat": n, "output": …, "trace": …}`；进程常驻、逐个用例串行，跑完所有用例（§18.11） |
 
 ### 5.4 Output 与 Trace
 
@@ -323,6 +324,8 @@ Score: {schema_version, case_id, repeat, scorer, scorer_version, value: float, p
         reason: str, evidence: JSON, judge: JudgeRecord | null, error: {kind, message} | null}
 JudgeRecord: {role, model, channel, prompt_version, temperature, raw}
 ```
+
+- `Score.value` 取值 [0, 1]，越大越好；组合评分器的结果也在这个范围内。延迟、费用、token 不是 Score，是从 Trace 算出的汇总指标（越小越好），门禁对它们用 `max`（§18.19）。
 
 ```python
 class Scorer(Protocol):
@@ -348,7 +351,7 @@ class Scorer(Protocol):
   - 被测系统：`target.config`、`target.versions`；
   - 数据集：`dataset{name, version, hash, synthetic}`；
   - 评分器：`scorers[{name, version}]`；
-  - 运行参数：`repeats`、`seed`；
+  - 运行参数：`repeats`、`seed`、`redact`（生效的脱敏规则名和自定义正则，导出时复用，§18.12）；
   - 运行环境：`started_at`、`finished_at`、`host`、`lite_eval_version`、`git_sha`、`git_dirty`；
   - 结果：`status`（`complete`、`partial`、`failed`）、`summary`、`cost`、`errors`、`warnings`；
   - 来源：`rescored_from`。
@@ -364,10 +367,10 @@ class Scorer(Protocol):
   - 再打分。换评分器、改阈值、改评审模型时，只重跑打分（`lite-eval rescore`）。
   - `--no-cache` 强制重新生成。
 - **重复**：`repeats: n`。报告给出均值、最小值、最大值；Target 声明自己是非确定性的时，默认 `n = 2`。
-- **并发**：用例之间并行（`concurrency`，默认 4）；每个用例有超时（`timeout_s`，默认 120），超时计为 `error.kind=timeout`。
+- **并发**：用例之间并行（`concurrency`，默认 4）；子进程 Target 例外，一个进程内严格串行（§18.11）。每个用例有超时（`timeout_s`，默认 120），超时计为 `error.kind=timeout`。
 - **可比性**：
-  - `setup_identity` 相同的配置共用一次 setup；
-  - setup 之后做一次不计时的预热；
+  - `setup_identity` 相同的配置共用一次 setup（生命周期见 §18.18）；
+  - setup 之后做一次不计时的预热（§18.18）；
   - 配置的执行顺序不影响结果（测试里打乱顺序验证）。
 - **重试**：只对传输层错误重试，指数退避且指数封顶（L31），最多 3 次。被测系统返回的业务错误不重试。
 - **预算**：`budget.max_cost_usd`、`budget.max_calls`。到上限就停，已完成的部分照常记录，`status=partial`。
@@ -398,6 +401,7 @@ class Scorer(Protocol):
 
 - 每个指标都给出整体值，并按 `tags` 分组。
 - 报告的表头写明“1 个用例 = x 分”（L12），出错和 partial 的用例单独计数。
+- 延迟分位数全局统一：`p50` = `statistics.median`，`p95` = 最近秩法（排序后取第 `ceil(0.95·n)` 个值），不插值；和 §18.16 的 lite-rag 定义一致。
 - 每个结论附上证据强度（L11）。
 
 ### 8.2 对比
@@ -424,6 +428,7 @@ class Scorer(Protocol):
 - **写在 Suite 里**：
   - 绝对阈值：`gate: [{metric: hit@5, min: 0.92, baseline_note: "0.960 on 2026-11-09"}]`；
   - 相对阈值：`{compare_to: baseline, max_drop: 0.02, require_significant: true}`。
+  - 精确语义（方向、`max`、重复运行、`require_significant`）见 §18.19。
 - **阈值的定法**：比实测基线低一点，留出约一个用例的余量；把基线值和日期写在旁边（来自 llm-steward 的 recall 门禁）。
 - **入口**：
   - CLI：`lite-eval run --gate`，不通过以退出码 1 退出，配置错误以退出码 2 退出；
@@ -542,7 +547,7 @@ assert_gate(run)                     # 在 pytest 里调用；失败时打印退
 ```
 
 - `run_id` 的格式和排序见 §18.7。
-- 建议：baseline 对应的运行提交进仓库，其余 gitignore（待确认，§17）。
+- baseline 对应的运行提交进仓库，其余 gitignore（§17）。
 
 ## 13. 与现有项目和 KB 的关系
 
@@ -615,18 +620,22 @@ lite-eval/
 1. 对整个阶段的 diff 跑 `/simplify`，并应用修改；
 2. 用 Codex 只读审查同一个 diff；
 3. 修掉成立的问题（bug 先写失败的测试），不成立的写下理由；
-4. 重跑全部检查，提交、推送，然后读 CI 结果；
+4. 重跑全部检查并报告结果；经 owner 同意后提交、推送，然后读 CI 结果；
 5. 在下面的“阶段记录”里追加一条。
 
 收尾完成之前不开始下一阶段。
 
+**v1 的完成线是 E3 结束**：E0–E3 交付核心功能（契约、两段式 runner、确定性评分、对比和门禁、lite-rag 迁移）和 Viewer。
+Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它逐条做；趋势页和 HTML 导出建在 E3 已有的索引和 API 上，
+增量不大，不拆出去。E4 及以后是 v1 之后的扩展。
+
 | 阶段 | 内容 | 验收 |
 | --- | --- | --- |
 | E0 环境 | 仓库骨架（backend 的 uv 项目、frontend 的 pnpm 项目、CI）；用 context7 或安装的源码核对并锁定 pydantic、pydantic-settings、typer、ranx、scipy、fastapi、uvicorn、jinja2、httpx 的版本和 API；端口 8720（Viewer）、8721（Vite dev）登记进 KB `global/machine/ports.md`；建项目 KB `projects/lite-eval/` | `lite-eval --help` 可用；CI 绿；KB 建好并通过校验 |
-| E1 契约与执行 | `contracts`；本地数据集和规范哈希（§18.6）；Python Target 和 fake Target；确定性评分器；两段式 runner（缓存、重复、并发、超时、重试、预算、自检、脱敏）；运行目录（原子写入）；`run`、`rescore`；终端报告；cost pack | 同一 Suite 跑两次，第二次全部命中缓存且结果相同；`versions()` 变了缓存失效（§18.5）；改了评分器后 `rescore` 不调用 Target；契约 round-trip，旧版本记录可读；出错、超时、截断、评分器出错都被记录并计入分母（§18.8）；预算到了以后 `status=partial`，退出码按 §18.4；配置顺序打乱后结果相同；CI 模式对未声明计费方式的 Target 和评审拒绝运行（§18.13）；`identical_scores` 和 `feature_not_exercised` 两个自检各有触发和不触发的测试（§18.17）；脱敏规则覆盖输出、trace、错误、缓存（§18.12）；cost pack 报出 token（含推理）和费用的汇总 |
-| E2 检索 pack 与对比 | retrieval pack（证据命中、ranx 指标、延迟）、setup 共享和预热、`compare`（§18.1–§18.3）、门禁（CLI 和 pytest）、baseline、排名指标交叉核对；**迁移 lite-rag** | 按 §18.16 的 lite-rag 条目：逐题 `answer_rank`、`doc_rank` 相同，聚合指标误差 ≤ 1e-9；McNemar 和 bootstrap 用手算的例子核对；不兼容的对比拒绝做门禁；门禁的退出码按 §18.4；自写指标和 ranx 在测试里一致；lite-rag 改为调用 lite-eval |
-| E3 Viewer | 只读 API、SQLite 索引（§18.15）、前端各页面（§10.1）、Annotation（§18.9、§18.10）、HTML 导出、打包进 Python 包（§18.14） | Playwright e2e：列出运行 → 运行详情 → 对比 → 用例详情 → 给 miss 归类；数据集页加一条“标注有误”；趋势页显示 baseline 切换；导出的单次运行和对比两种 HTML 不连服务端都能打开；Viewer 拒绝非 loopback 地址、非 loopback 的 Host 和 Origin、没有 token 的写入；两个 Viewer 不能同时用一个目录；文件和索引跑同一套读取测试；干净 venv 里装 wheel 后 `lite-eval view --check` 成功 |
-| E4 记忆 pack 与接入 | memory pack；HTTP 和子进程 Target（§18.11）；LongMemEval 和 LoCoMo 加载器；**迁移 lite-mem 的两跳集和 llm-steward 的 recall 门禁** | 按 §18.16 的 lite-mem、llm-steward 条目逐项相同；llm-steward 的 `-m eval` 改用 lite-eval 的门禁；HTTP 和子进程 Target 的每种失败（状态码、超时、超长、非 JSON、进程退出）都有测试；两个加载器用各自的小样例文件测试转换结果和许可证记录；LongMemEval-S 用本地模型跑通一个小子集（可选 marker） |
+| E1 契约与执行 | `contracts`；本地数据集和规范哈希（§18.6）；Python Target 和 fake Target；确定性评分器；两段式 runner（缓存、重复、并发、超时、重试、预算、自检、脱敏）；运行目录（原子写入）；`run`、`rescore`；终端报告；cost pack | 同一 Suite 跑两次，第二次全部命中缓存且结果相同；`versions()` 变了缓存失效（§18.5）；改了评分器后 `rescore` 不调用 Target；契约 round-trip，旧版本记录可读；出错、超时、截断、评分器出错都被记录并计入分母（§18.8）；预算到了以后 `status=partial`，退出码按 §18.4；配置顺序打乱后结果相同；CI 模式对未声明计费方式的 Target 和评审拒绝运行（§18.13）；`identical_scores` 和 `feature_not_exercised` 两个自检各有触发和不触发的测试（§18.17）；脱敏规则覆盖输出、trace、错误、缓存（§18.12）；cost pack 报出 token（含推理）和费用的汇总；CI 放行付费只在环境变量和 Suite 同时允许时生效，只满足一个仍拒绝，放行写进 `run.json`（§18.13）；数据集里疑似密钥导致加载报错，按匹配项豁免后通过并写进 `run.json`（§18.12） |
+| E2 检索 pack 与对比 | retrieval pack（证据命中、ranx 指标、延迟）、setup 共享和预热、`compare`（§18.1–§18.3）、门禁（CLI 和 pytest）、baseline、排名指标交叉核对；**迁移 lite-rag** | 按 §18.16 的 lite-rag 条目：逐题 `answer_rank`、`doc_rank` 相同，聚合指标误差 ≤ 1e-9；McNemar 和 bootstrap 用手算的例子核对；不兼容的对比拒绝做门禁；门禁的退出码按 §18.4；门禁语义按 §18.19（`min`/`max`、`max_drop` 加或不加 `require_significant`、重复运行）各有测试；同一 `setup_identity` 的两个配置 setup 只调用一次、预热不计时且不进记录，teardown 在组内全部跑完后（§18.18）；自写指标和 ranx 在测试里一致；lite-rag 改为调用 lite-eval |
+| E3 Viewer | 只读 API、SQLite 索引（§18.15）、前端各页面（§10.1）、Annotation（§18.9、§18.10）、HTML 导出、打包进 Python 包（§18.14） | Playwright e2e：列出运行 → 运行详情 → 对比 → 用例详情 → 给 miss 归类；数据集页加一条“标注有误”；趋势页显示 baseline 切换；导出的单次运行和对比两种 HTML 不连服务端都能打开；Viewer 拒绝非 loopback 地址、非 loopback 的 Host 和 Origin、没有 token 的写入，任何响应都不带 CORS 头（§18.10）；导出用 run 记录的脱敏规则，用例内容含 `</script>` 时导出的 HTML 不被截断、不执行脚本（§18.12）；两个 Viewer 不能同时用一个目录；文件和索引跑同一套读取测试；干净 venv 里装 wheel 后 `lite-eval view --check` 成功 |
+| E4 记忆 pack 与接入 | memory pack；HTTP 和子进程 Target（§18.11）；LongMemEval 和 LoCoMo 加载器；**迁移 lite-mem 的两跳集和 llm-steward 的 recall 门禁** | 按 §18.16 的 lite-mem、llm-steward 条目逐项相同；llm-steward 的 `-m eval` 改用 lite-eval 的门禁；HTTP 和子进程 Target 的每种失败（状态码、超时、超长、非 JSON、进程退出）都有测试；子进程 Target 在 `concurrency=4` 下每个回复对应正确的用例，回复的 `case_id`/`repeat` 不符记为 `invalid_output`（§18.11）；两个加载器用各自的小样例文件测试转换结果和许可证记录；LongMemEval-S 用本地模型跑通一个小子集（可选 marker） |
 | E5 模型评审 | 评审评分器、校准流程；judging、extraction、grounded 三个 pack；KB 导出 | 校准集上测出一致率；构造的反例被正确识别；评审解析失败记为评分错误；未校准的评审不能被正式 Suite 引用；KB 导出用固定的样例运行生成，和提交的期望文件逐字相同，并通过 KB 的 `check.mjs`（导出格式写明对应 KB README 的哪个 schema 版本） |
 | E6 agent（以后） | agent pack；Inspect AI 桥接（可选） | 等有 agent 应用要测时再定 |
 | E7 收尾 | 全仓库 `/simplify` 和 Codex 审查；README；发布方式 | 审查结论记录在案 |
@@ -638,13 +647,32 @@ lite-eval/
 - **设计（2026-11-13，在 llm-steward 的会话里完成）**：写了设计文档和各级 agent 指南。只有文档，不跑 /simplify。
   - Codex 第一轮提出 6 个高、13 个中优先级的问题：重复运行、迁移的“数字一致”、退出码优先级、Annotation 写入的安全和并发、HTTP 和子进程 Target 的细节、脱敏范围、缓存键与版本、统计细节、run_id 排序、前端打包、SQLite 索引、CI 计费守卫、哈希、失败的记录、验收覆盖、可比性。全部采纳，写成 §18，并相应修改 §2、§5、§6、§10–§12、§16。
   - Codex 第二轮又提出 4 个问题：缓存键缺数据集和语料哈希；HTTP 和子进程 Target 没有声明版本的办法；Annotation 的更正链可能分叉；指南和 §18.13 的说法不一致。全部采纳。
+- **设计审查第三轮（2026-11-13，lite-eval 仓库内，开工前）**：Codex 对整份设计做只读审查，提出 12 条（4 高、6 中、2 低）。
+  - 采纳：
+    - 子进程 Target 和并发冲突 → §18.11 串行、回复带 `case_id`/`repeat`，超时后重启；
+    - setup 共享没有归属 → 新增 §18.18（分组、leader/follower、teardown 顺序、只读、预热）；
+    - 门禁语义不清 → 新增 §18.19，`Score.value` 定为 [0, 1]（§5.5）；
+    - 分位数只在迁移节定义 → §8.1 全局统一；
+    - 阶段收尾写着“提交、推送” → 改为经 owner 同意后；
+    - 导出用哪套脱敏规则、内嵌 JSON 转义 → §18.12，`run.json` 记录 `redact`（§5.6）；
+    - 数据集密钥豁免太宽 → §18.12 按匹配项豁免；
+    - 显式 `cache: on` 的风险 → §18.5 每次运行都带警告；
+    - 验收缺项 → §16 E1–E4 补上 CI 放行路径、密钥扫描、setup 共享、门禁语义、CORS、导出转义、子进程并发。
+  - 部分采纳：读接口跨域。浏览器的同源策略已经挡住跨域读取，DNS rebinding 由 Host 检查挡住；只补“不发 CORS 头”和对应测试（§18.10），不给读接口加 token。
+  - 不采纳：bootstrap 退化情况。区间为 [0, 0] 时按“区间不含 0 才显著”的规则自然判为不显著；NaN 已被规范 JSON 的 `allow_nan=False` 挡住。不需要新规则。
+  - v1 范围（Codex 建议砍到核心 + 基础 Viewer）：定为 E0–E3，理由写在本节开头。
+  - 另外修正：R12 和 §18.13 对齐；§4 的 `run(input)` 改为 `run(case)`；`backend/AGENTS.md` 的规则编号。
 
-## 17. 待确认（开工前问 owner）
+## 17. 已定的开工问题（2026-11-13）
 
-- 是否公开到 GitHub（`ArthurGao/lite-eval`），以及许可证（建议 Apache-2.0，和 llm-steward 一致）。
-- 运行记录默认是否提交进使用方的仓库（建议：baseline 对应的运行提交，其余 gitignore）。
-- E4 跑外部基准时，是否允许用付费模型做评审（默认只用本地 Ollama）。
-- 发布方式：只从 git 安装（像 lite-mem 那样按提交锁定），还是发布到 PyPI。
+开工前问 owner 的四个问题。第一条由 owner 定，其余由 owner 交给实现方按设计的建议决定。
+
+- **公开**：公开在 GitHub `ArthurGao/lite-eval`，许可证 Apache-2.0（和 llm-steward 一致）。
+- **运行记录**：baseline 对应的运行提交进使用方的仓库，其余 gitignore。`lite-eval baseline set` 时提示提交那个运行目录。
+- **E4 的评审模型**：只用本地 Ollama。付费模型只在 owner 针对某一次运行明确要求时才用，并按 §18.13 声明计费方式。
+- **发布方式**：v1 不发 PyPI。前端构建产物在 gitignore 里，直接从 git 安装会缺少 Viewer，所以 CI 打包任务（§18.14）把带前端的 wheel
+  作为 GitHub Release 的附件发布，使用方按版本号安装这个 wheel。仅从 git 按提交安装也可以，但只能用 API 和 CLI，`lite-eval view`
+  会给出 §18.14 的“先构建前端”错误。E7 再决定是否发 PyPI。
 
 ## 18. 规格细节（实现时以此为准）
 
@@ -711,6 +739,7 @@ pytest 的 `assert_gate` 对应抛出 `ConfigError`、`RunError`、`GateFailed`�
   - `versions_from: {url: …, path: "$.versions"}`：在 setup 时请求一次；
   - `versions_from: {command: [...]}`：在 setup 时运行一次，从 stdout 读 JSON。
   - 两者都没写时，这个 Target 的缓存默认关闭（`cache: off`），并给出 `unversioned_target` 警告；Suite 显式写 `cache: on` 才会打开。
+  - 显式打开后，`unversioned_target` 警告仍然写进每一次运行的 `warnings`：被测代码换了而 URL 或命令没变时，缓存会返回旧输出，这个风险要一直看得见。
 - **存储**：每条缓存存一份脱敏后的 Output（§18.12），位置是 `.lite-eval/cache/<键的前两位>/<键>.json`。运行记录复制一份 Output，不引用缓存。
 - **读取**：读到损坏的缓存条目就当作没有命中，并给出警告。
 
@@ -767,6 +796,7 @@ pytest 的 `assert_gate` 对应抛出 `ConfigError`、`RunError`、`GateFailed`�
   - 请求头带上 `X-Lite-Eval-Token`：这是每个进程启动时随机生成的 token，注入在页面里，用来防 CSRF；
   - 请求体由 pydantic 校验，大小上限 16 KB。
 - 读接口不需要 token，但同样要检查 `Host`。
+- **不发任何 CORS 头**（不装 CORS 中间件，`OPTIONS` 预检不放行）：浏览器的同源策略因此挡住其他网站读取 Viewer 的响应。测试确认响应里没有 `Access-Control-Allow-*`。
 - 本机的其他进程能读到 token，这在威胁模型之内可以接受（Viewer 只给本人用）。
 - 参考 llm-gateway 的 `server/guard.py`。
 
@@ -794,7 +824,9 @@ runner 开始时会把要执行的命令或 URL 打印出来。
 
 - **启动**：在 `setup` 里用 argv 列表启动，不经过 shell。配置项有 `cwd` 和环境变量白名单 `env_allow`。
 - **就绪**：进程启动后，必须在 `startup_timeout_s` 内输出一行 `{"ready": true}`。
-- **每个用例**：往 stdin 写一行 JSON，在超时时间内从 stdout 读一行 JSON；一行超过 `max_line_bytes`（默认 10 MB）记为 `truncated`。
+- **每个用例**：往 stdin 写一行 `{"case": …, "repeat": n}`，在超时时间内从 stdout 读一行 `{"case_id": …, "repeat": n, "output": …, "trace": …}`；一行超过 `max_line_bytes`（默认 10 MB）记为 `truncated`。
+- **串行**：一个进程同一时间只处理一个用例，runner 用锁保证写一行、读一行之间没有别的用例插进来；`concurrency` 对子进程 Target 不生效。回复里的 `case_id` 或 `repeat` 和当前用例不符，记为 `invalid_output`。
+- **超时后**：进程里可能还留着迟到的回复，所以超时的用例记为 `timeout` 之后，重启进程再继续。这种重启不计入下面“进程中途退出只重启一次”的次数。
 - **stderr**：脱敏后写进运行目录的 `target.stderr.log`，大小上限 5 MB。
 - **进程中途退出**：当前用例记为 `exception`，进程重启一次；再退出，剩下的用例都记为 `exception`，运行标为 `partial`。
 - **结束**：`teardown` 时关闭 stdin，等待 5 秒，然后 `terminate`，最后 `kill`。
@@ -809,13 +841,17 @@ runner 开始时会把要执行的命令或 URL 打印出来。
   - `JudgeRecord.raw`；
   - 缓存条目、`target.stderr.log`、各种导出。
 - **时机**：runner 在写缓存和写运行记录之前执行一次；server 和导出在输出之前再执行一次。
+- **导出用哪套规则**：run 的 `run.json` 里记下的 `redact`，加上导出命令的 `--redact` 追加的规则；只能加，不能减。对比导出用两个 run 规则的并集。
+- **内嵌数据的转义**：HTML 导出把数据放进 `<script type="application/json">`，序列化后把 `<`、`>`、`&`、U+2028、U+2029 转成 `\uXXXX`，用例内容里的 `</script>` 不能结束这个标签。
 - **规则**：
   - 内置 `connection_strings`：URL 形式和 `key=value` 形式的连接串都按 libpq 的规则解析，名字里含 `password` 的参数一律打码（沿用 lite-mem 的做法）；
   - 内置 `api_keys`：`sk-…`、`stw_…`、`Bearer …`、`AKIA…`，以及 `api[_-]?key`、`token`、`secret` 后面跟 `=` 或 `:` 的值；
   - 内置 `emails`；
   - Suite 自定义的正则。
   - 替换成 `«redacted:<规则名>»`。
-- **数据集不脱敏**：数据集本来就不该有敏感内容（R20）。加载时会扫描一遍，发现疑似密钥就报错，除非 `dataset.yaml` 里明确写了 `contains_secrets: false_positive_ok` 并说明理由。
+- **数据集不脱敏**：数据集本来就不该有敏感内容（R20）。加载时会扫描一遍，发现疑似密钥就报错。
+  - 误报按匹配项逐条豁免：`dataset.yaml` 里写 `secret_scan_allow: [{case_id, rule, match_sha256, reason}]`，`match_sha256` 是命中文本的 sha256，`reason` 必填。没有整个数据集一次豁免的写法。
+  - 用到的豁免写进 `run.json` 的 `warnings`；列了却没命中的豁免也给出警告，提醒删掉。
 - **测试**：每种形式至少一个测试用例，并写明哪些部分应该保持可读。
 
 ### 18.13 CI 中的计费守卫
@@ -840,6 +876,7 @@ runner 开始时会把要执行的命令或 URL 打印出来。
   2. `uv build`；
   3. 在干净的 venv 里安装 wheel；
   4. 运行 `lite-eval view --check`：在临时端口上启动，请求 `/` 和 `/api/health` 都返回 200，然后退出。
+- **发布**（§17）：打 `v*` tag 时，CI 打包任务通过上面四步后，把 wheel 和 sdist 作为这个 tag 的 GitHub Release 附件上传。
 - **没有前端构建产物时**：`lite-eval view` 报出清楚的错误（提示先构建前端），API 仍然可以单独使用。
 
 ### 18.15 SQLite 索引
@@ -901,3 +938,23 @@ runner 开始时会把要执行的命令或 URL 打印出来。
   - `lite-eval run --crosscheck` 会在运行时用 ranx 再算一遍，差值超过 1e-9 就给出警告。
 - **`within_noise`**：定义见 §18.1。
 - **其他**：`all_failed`（所有用例都失败）、`empty_group`（某个标签分组没有用例）、`synthetic_dataset`（数据集是合成的）。
+
+### 18.18 setup 共享与预热
+
+- **分组**：runner 按 `(target 名, canonical(setup_identity()))` 给配置分组，一次只跑一个组；组内各配置按 Suite 里的顺序跑，组之间的顺序不影响结果。
+- **生命周期**：
+  1. 组内第一个配置（leader）调用 `setup(dataset)`；
+  2. 其余配置（follower）如果实现了 `share_setup_from(leader)`，就调用它接过 leader 的 setup；没实现的，各自调用 `setup(dataset)`，并给出 `setup_not_shared` 警告（结果仍然正确，只是慢）；
+  3. 每个配置跑完自己的用例后，先 teardown follower；组内全部跑完，最后 teardown leader。
+- **只读**：共享的 setup 在 `run` 期间只读。会修改共享状态的 Target（例如记忆系统在 `run` 里写入）不能共享：`setup_identity()` 必须包含配置名，让它自成一组。
+- **预热**：每个配置在 setup 之后、计时之前，对按 id 排序的第一个用例调用一次 `run`，结果丢弃：不进缓存、不进 `outputs.jsonl`、不算延迟；调用次数和费用照样计入预算和 `cost`（L6）。缓存全部命中、不需要调用 Target 时，不做预热。
+
+### 18.19 门禁语义
+
+- **指标的值**：运行级指标（§18.1：先算每个用例在所有重复上的均值，再对用例取平均）。出错的用例按失败计。
+- **绝对阈值**：`{metric, min}` 要求值 ≥ `min`；`{metric, max}` 要求值 ≤ `max`（延迟、费用这类越小越好的指标）。两者都写时都要满足。
+- **相对阈值**：`{compare_to: baseline, max_drop, require_significant}`，只用可比的用例（§18.3）。
+  - `delta` = 候选 − 基线（越小越好的指标取相反数，统一成“越大越好”）。
+  - `require_significant: false`（默认）：`delta < −max_drop` 就失败。
+  - `require_significant: true`：`delta < −max_drop`，**并且**这次下降按 §18.2 显著，才失败。用来避免小样本上的噪声拦下合并；报告里照样列出不显著的下降。
+- **重复运行**：只看均值，不看单次重复；`within_noise` 警告（§18.1）只报告，不改变门禁结论。

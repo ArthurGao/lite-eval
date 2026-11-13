@@ -11,3 +11,5 @@ that?**
 
 Status: design only (2026-11-13). Read [`docs/lite-eval-design.md`](docs/lite-eval-design.md).
 Sister projects: [lite-rag](https://github.com/ArthurGao/lite-rag), [lite-mem](https://github.com/ArthurGao/lite-mem).
+
+License: [Apache-2.0](LICENSE).

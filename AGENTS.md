@@ -37,7 +37,8 @@ If a change must contradict the design, update the design in the same change and
 
 ## Current stage
 
-**Not started.** Design written 2026-11-13. Start at E0 (design §16). Ask the owner the §17 questions first.
+**Not started.** Design written and reviewed 2026-11-13; the §17 questions are settled. Start at E0 (design §16).
+v1 = E0–E3.
 
 ## Rules
 
