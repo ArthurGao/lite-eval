@@ -37,8 +37,7 @@ If a change must contradict the design, update the design in the same change and
 
 ## Current stage
 
-**Not started.** Design written and reviewed 2026-11-13; the §17 questions are settled. Start at E0 (design §16).
-v1 = E0–E3.
+**E0 done (2026-11-13); next E1** (contracts and the two-phase runner, design §16). v1 = E0–E3.
 
 ## Rules
 

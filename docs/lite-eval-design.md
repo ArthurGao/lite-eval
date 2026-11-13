@@ -631,7 +631,7 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
 
 | 阶段 | 内容 | 验收 |
 | --- | --- | --- |
-| E0 环境 | 仓库骨架（backend 的 uv 项目、frontend 的 pnpm 项目、CI）；用 context7 或安装的源码核对并锁定 pydantic、pydantic-settings、typer、ranx、scipy、fastapi、uvicorn、jinja2、httpx 的版本和 API；端口 8720（Viewer）、8721（Vite dev）登记进 KB `global/machine/ports.md`；建项目 KB `projects/lite-eval/` | `lite-eval --help` 可用；CI 绿；KB 建好并通过校验 |
+| E0 环境 | 仓库骨架（backend 的 uv 项目、frontend 的 pnpm 项目、CI）；用 context7 或安装的源码核对并锁定 pydantic、pydantic-settings、typer、ranx、scipy、fastapi、uvicorn、jinja2、httpx2 的版本和 API（用 httpx2 不用 httpx：openai SDK 和 Starlette 的 TestClient 都用它，见 E0 阶段记录）；端口 8720（Viewer）、8721（Vite dev）登记进 KB `global/machine/ports.md`；建项目 KB `projects/lite-eval/` | `lite-eval --help` 可用；CI 绿；KB 建好并通过校验 |
 | E1 契约与执行 | `contracts`；本地数据集和规范哈希（§18.6）；Python Target 和 fake Target；确定性评分器；两段式 runner（缓存、重复、并发、超时、重试、预算、自检、脱敏）；运行目录（原子写入）；`run`、`rescore`；终端报告；cost pack | 同一 Suite 跑两次，第二次全部命中缓存且结果相同；`versions()` 变了缓存失效（§18.5）；改了评分器后 `rescore` 不调用 Target；契约 round-trip，旧版本记录可读；出错、超时、截断、评分器出错都被记录并计入分母（§18.8）；预算到了以后 `status=partial`，退出码按 §18.4；配置顺序打乱后结果相同；CI 模式对未声明计费方式的 Target 和评审拒绝运行（§18.13）；`identical_scores` 和 `feature_not_exercised` 两个自检各有触发和不触发的测试（§18.17）；脱敏规则覆盖输出、trace、错误、缓存（§18.12）；cost pack 报出 token（含推理）和费用的汇总；CI 放行付费只在环境变量和 Suite 同时允许时生效，只满足一个仍拒绝，放行写进 `run.json`（§18.13）；数据集里疑似密钥导致加载报错，按匹配项豁免后通过并写进 `run.json`（§18.12） |
 | E2 检索 pack 与对比 | retrieval pack（证据命中、ranx 指标、延迟）、setup 共享和预热、`compare`（§18.1–§18.3）、门禁（CLI 和 pytest）、baseline、排名指标交叉核对；**迁移 lite-rag** | 按 §18.16 的 lite-rag 条目：逐题 `answer_rank`、`doc_rank` 相同，聚合指标误差 ≤ 1e-9；McNemar 和 bootstrap 用手算的例子核对；不兼容的对比拒绝做门禁；门禁的退出码按 §18.4；门禁语义按 §18.19（`min`/`max`、`max_drop` 加或不加 `require_significant`、重复运行）各有测试；同一 `setup_identity` 的两个配置 setup 只调用一次、预热不计时且不进记录，teardown 在组内全部跑完后（§18.18）；自写指标和 ranx 在测试里一致；lite-rag 改为调用 lite-eval |
 | E3 Viewer | 只读 API、SQLite 索引（§18.15）、前端各页面（§10.1）、Annotation（§18.9、§18.10）、HTML 导出、打包进 Python 包（§18.14） | Playwright e2e：列出运行 → 运行详情 → 对比 → 用例详情 → 给 miss 归类；数据集页加一条“标注有误”；趋势页显示 baseline 切换；导出的单次运行和对比两种 HTML 不连服务端都能打开；Viewer 拒绝非 loopback 地址、非 loopback 的 Host 和 Origin、没有 token 的写入，任何响应都不带 CORS 头（§18.10）；导出用 run 记录的脱敏规则，用例内容含 `</script>` 时导出的 HTML 不被截断、不执行脚本（§18.12）；两个 Viewer 不能同时用一个目录；文件和索引跑同一套读取测试；干净 venv 里装 wheel 后 `lite-eval view --check` 成功 |
@@ -662,6 +662,38 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
   - 不采纳：bootstrap 退化情况。区间为 [0, 0] 时按“区间不含 0 才显著”的规则自然判为不显著；NaN 已被规范 JSON 的 `allow_nan=False` 挡住。不需要新规则。
   - v1 范围（Codex 建议砍到核心 + 基础 Viewer）：定为 E0–E3，理由写在本节开头。
   - 另外修正：R12 和 §18.13 对齐；§4 的 `run(input)` 改为 `run(case)`；`backend/AGENTS.md` 的规则编号。
+- **E0 环境（2026-11-13）**：
+  - 做了什么：
+    - backend：uv 项目，Python 3.12，hatchling；全部依赖精确锁定。
+    - `lite-eval` CLI：只有 `--help` 和 `--version`，命令在实现它的阶段才加。
+    - `tests/unit/test_dependencies.py`：用手算值锁住后面阶段要用的第三方 API，在安装的源码上核对过。
+    - `tests/unit/test_packaging.py`：wheel 和 sdist 带上 LICENSE。
+    - frontend：单包 pnpm 骨架，占位页面加一个组件测试。
+    - CI：backend 和 frontend 两个 job，action 锁到 commit SHA，`permissions: contents: read`。
+    - KB：建了 `projects/lite-eval/`，含决定表和 `reference/dependencies.md`；端口 8720、8721 登记进 `ports.md`。
+    - 每个新测试都见过一次失败。
+  - 设计改动：E0 行 httpx → httpx2。
+    - 原因：openai SDK 3.50 依赖 httpx2；Starlette 1.10 的 TestClient 优先用 httpx2。
+    - 一个进程只用一个 HTTP 客户端：ruff banned-api（TID251）禁止 `import httpx`，`test_lockfile_has_one_http_client` 确认锁文件里没有它。
+  - /simplify 采纳 9 条：
+    - CLI 帮助文案去重；
+    - hatchling `artifacts` 合并到 `[tool.hatch.build]`；
+    - mypy 也检查 `tests`；
+    - httpx 检查从运行时断言改为 lint 规则加锁文件测试；
+    - `tests/conftest.py` 固定 `TERMINAL_WIDTH`，CLI 测试不再合并空白；
+    - 删掉断言不了任何东西的 uvicorn 测试（E3 用 `view --check` 验证）；
+    - 前端 build 不再重复跑 tsc；
+    - CI 的 pnpm 版本从 `packageManager` 读；
+    - 新增 `backend/README.md` 作为包的说明。
+  - /simplify 未采纳：
+    - ranx 测试约 5 秒：numba 首次编译的真实开销，改成可选标记会让 API 失去保护；
+    - setup-uv 缓存：v10.3.3 默认 `enable-cache: auto`，在 GitHub 托管的机器上已开启；
+    - KB 依赖页里重复的版本号：这一页就是“哪个版本、哪天核对过”的记录。
+  - Codex 4 条，全部采纳：
+    - action 改为锁 commit SHA；
+    - wheel 和 sdist 缺 LICENSE：先写失败的 `test_packaging.py`，再复制 `backend/LICENSE`，测试同时断言两份内容相同；
+    - 删掉无意义的 `binomtest(0, 1)` 断言；
+    - 阶段状态和阶段记录对齐。
 
 ## 17. 已定的开工问题（2026-11-13）
 

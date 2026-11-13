@@ -1,0 +1,89 @@
+[project]
+name = "lite-eval"
+version = "0.0.0"
+description = "A general evaluation module for AI applications: generate once, score many, honest comparisons and gates"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12,<3.13"
+# Exact pins (AGENTS.md rule 13). Verified APIs: tests/unit/test_dependencies.py and the project KB
+# reference/dependencies.md. Upgrading one means re-running those tests first.
+dependencies = [
+    "pydantic==2.14.3",
+    "pydantic-settings==2.16.2",
+    "typer==0.29.1",
+    "jinja2==3.1.6",
+    "pyyaml==6.0.3",
+    # httpx2, not httpx: the openai SDK (judges, E5) and mcp already run on httpx2; one HTTP client per process.
+    "httpx2==2.16.0",
+]
+
+[project.optional-dependencies]
+# The Viewer's API (E3).
+server = [
+    "fastapi==0.162.5",
+    "uvicorn==0.54.0",
+]
+# Ranking metrics cross-check and statistics (E2).
+ranking = [
+    "ranx==0.3.21",
+    "scipy==1.18.1",
+]
+# Model judges through an OpenAI-compatible endpoint (E5).
+judge = [
+    "openai==3.50.0",
+]
+
+[project.scripts]
+lite-eval = "lite_eval.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest==9.2.0",
+    "pytest-asyncio==1.5.0",
+    "ruff==0.17.5",
+    "mypy==2.4.1",
+    "types-pyyaml==6.0.12.20261111",
+]
+
+[build-system]
+requires = ["hatchling==1.33.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+# The Viewer build is gitignored but must ship in the wheel and sdist (design §18.14).
+artifacts = ["src/lite_eval/server/static/**"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lite_eval"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "ASYNC", "RUF", "TID"]
+# Full-width punctuation is intentional in Chinese test data and prompts.
+allowed-confusables = ["：", "（", "）", "！", "？"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"httpx".msg = "Use httpx2: the openai SDK and Starlette's TestClient run on it (project KB, decisions)."
+
+[tool.mypy]
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["src", "tests"]
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+# No py.typed in these (ranking extra; checked in the installed 0.3.21 / 1.18.1 sources).
+module = ["ranx", "ranx.*", "scipy", "scipy.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+# Opt-in, deselected by default: `-m ollama` (real local models on 127.0.0.1:11434).
+addopts = "-m 'not ollama'"
+markers = [
+    "ollama: uses a real local model through Ollama (opt-in: uv run pytest -m ollama)",
+]
