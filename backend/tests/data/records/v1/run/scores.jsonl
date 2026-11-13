@@ -1,0 +1,3 @@
+{"schema_version":1,"case_id":"q1","repeat":0,"scorer":"exact_match","scorer_version":"1","value":1.0,"passed":true,"reason":"equal","evidence":null,"judge":null,"error":null}
+{"schema_version":1,"case_id":"q2","repeat":0,"scorer":"exact_match","scorer_version":"1","value":1.0,"passed":true,"reason":"equal","evidence":null,"judge":null,"error":null}
+{"schema_version":1,"case_id":"q3","repeat":0,"scorer":"exact_match","scorer_version":"1","value":0.0,"passed":false,"reason":"target error: timeout","evidence":null,"judge":null,"error":null}

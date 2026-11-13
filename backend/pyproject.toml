@@ -70,7 +70,7 @@ allowed-confusables = ["：", "（", "）", "！", "？"]
 [tool.mypy]
 strict = true
 plugins = ["pydantic.mypy"]
-files = ["src", "tests"]
+files = ["src", "tests", "examples"]
 mypy_path = "src"
 
 [[tool.mypy.overrides]]

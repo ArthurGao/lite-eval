@@ -1,0 +1,5 @@
+name: capitals
+version: "1"
+description: Three capital-city questions, one with lower-case input.
+license: CC0-1.0
+synthetic: true

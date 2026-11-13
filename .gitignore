@@ -34,3 +34,6 @@ test-results/
 
 # lite-eval's own working data
 .lite-eval/
+
+# backend/examples: runs written by trying the demo suite
+backend/examples/runs/

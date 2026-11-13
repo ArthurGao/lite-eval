@@ -11,12 +11,16 @@ Design: `docs/lite-eval-design.md` §5 (contracts), §6 (runner), §7 (packs), �
 backend/
   pyproject.toml              # uv; extras: [server] (fastapi, uvicorn), [ranking] (ranx, scipy), [judge] (openai)
   src/lite_eval/
-    contracts.py              # every contract, pydantic, schema_version
+    canonical.py              # canonical JSON + sha256 (design §18.6); every hash goes through it
+    contracts.py              # every contract, pydantic, schema_version; imports only canonical
+    errors.py                 # ConfigError (exit 2), RunError (exit 3)
     config.py                 # pydantic-settings, prefix LITE_EVAL_, no field aliases (design §3 L28)
-    datasets/                 # local dir + hash; loaders/ (longmemeval, locomo)
-    targets/                  # python.py, http.py, command.py, fake.py
-    scorers/                  # deterministic.py, ranking.py, judge.py, compose.py
-    packs/                    # one module per task type
+    suite.py                  # suite YAML and the evaluation root (design §18.20)
+    datasets/                 # local.py: dataset dir, hashes, secret scan; loaders/ (longmemeval, locomo)
+    targets/                  # base.py (protocol, errors), python.py, fake.py; http.py, command.py (E4)
+    scorers/                  # base.py, deterministic.py, compose.py; ranking.py (E2), judge.py (E5)
+    packs/                    # one module per task type (cost.py from E1)
+    cache.py                  # output cache (design §18.5)
     runner.py                 # two-phase execution (design §6)
     store.py  index.py        # run directories (truth) and the Viewer's SQLite index (rebuildable)
     analysis/                 # summary, compare (McNemar, bootstrap), gate
@@ -26,14 +30,18 @@ backend/
     prompts/*.j2
     cli.py  pytest_plugin.py
   tests/
-    fakes/                    # FakeTarget (scripted outputs, errors, latency), FakeJudge
+    helpers.py                # dataset and suite builders under tmp_path
+    data/records/v1/          # committed run directory of schema_version 1 (must keep loading)
     unit/  integration/  e2e/ # e2e: real subprocess and HTTP targets against local fake servers
   examples/                   # one minimal target per access method + a tiny dataset
 ```
 
+FakeTarget lives in the package (`lite_eval/targets/fake.py`) so suites and examples can use it too;
+FakeJudge joins it in E5.
+
 ## Layering
 
-- `contracts` imports nothing else from the package. `analysis/` and `report/` read contracts only; they never call
+- `contracts` imports nothing else from the package except `canonical`. `analysis/` and `report/` read contracts only; they never call
   a target or a judge.
 - `runner` is the only module that calls targets; `scorers/judge.py` is the only module that calls a model.
 - `server/` reads through `store` and `index`; it never runs a suite. Its only write is an annotation.

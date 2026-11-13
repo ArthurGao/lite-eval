@@ -37,7 +37,7 @@ If a change must contradict the design, update the design in the same change and
 
 ## Current stage
 
-**E0 done (2026-11-13); next E1** (contracts and the two-phase runner, design §16). v1 = E0–E3.
+**E1 done (2026-11-13); next E2** (retrieval pack, compare, gates, lite-rag migration; design §16). v1 = E0–E3.
 
 ## Rules
 
@@ -85,7 +85,8 @@ uv sync --locked --all-extras        # a bare `uv sync` drops the extras and loo
 uv run pytest                        # fakes only
 uv run pytest -m ollama              # opt-in: real local models
 uv run ruff check && uv run ruff format --check && uv run mypy
-uv run lite-eval run <suite.yaml> [--gate] [--ci]
+uv run lite-eval run <suite.yaml> [--config NAME] [--no-cache] [--ci]   # --gate from E2
+uv run lite-eval rescore <runs/<suite>/<run_id>> [--scorer SPEC]
 uv run lite-eval view                # http://127.0.0.1:8720
 ```
 

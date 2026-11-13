@@ -1,0 +1,13 @@
+schema_version: 1
+name: capitals-demo
+dataset: ../datasets/capitals
+targets:
+  - python: examples.demo_target:make
+    configs:
+      - {name: strict}
+      - {name: fuzzy, fuzzy: true}
+scorers:
+  - exact_match
+  - {name: contains, case_sensitive: false}
+expect_features: [normalise]
+redact: [connection_strings, api_keys]

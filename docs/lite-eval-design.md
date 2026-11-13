@@ -699,6 +699,43 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
     - 本地用 `GITHUB_ACTIONS=true uv run pytest` 复现了失败。
     - 修法：`tests/conftest.py` 设 `_TYPER_FORCE_DISABLE_TERMINAL=1`。typer 在 import 时读这个开关，和 `TERMINAL_WIDTH` 放在同一处。
     - 修完后三种变量下测试都通过。
+- **E1 契约与执行（2026-11-13）**：
+  - 做了什么：
+    - 契约：Case、Output、Trace、Score、RunRecord、Annotation（§5）；规范 JSON 和哈希（§18.6）；数据集目录、加载时的密钥扫描和逐项豁免（§18.12）。
+    - Target：Python Target 和 FakeTarget。
+    - 评分器：7 个确定性评分器，以及 all_of、any_of、weighted 组合。
+    - 两段式 runner：缓存、重复、并发、超时、重试、整个 Suite 共用的预算、自检、脱敏、CI 计费守卫。
+    - 运行目录（原子写入）、`run` 和 `rescore`、终端报告、cost pack。
+    - `backend/examples/`：一个最小的 Python Target 加上 3 条用例。
+    - 新增 §18.20，写明设计没定死的接入方式和 runner 细节。
+  - 验证：
+    - pytest 153 passed；在 `CI=true GITHUB_ACTIONS=true` 下也通过。
+    - 每个新测试都见过一次失败：脚本 60 处改坏，每一处都让对应测试失败。
+    - 改坏脚本第一轮有两处“假绿”：Python 按源文件的修改时间（精确到秒）和大小判断 `.pyc` 是否过期，同一秒内两次大小相同的改坏会测到旧字节码。脚本改为不写字节码并每次清掉 `__pycache__`。
+    - CI 里出现 skip 就失败（`tests/conftest.py`），实际试过：`CI=true` 时有 skip，退出码 1。
+  - /simplify 的四个审查找出 4 个 bug，都先写失败的回归测试再修：
+    - 缓存命中的输出没有按当前规则脱敏（Suite 加了规则后会漏出）；
+    - 预算按配置计算，3 个配置能花 3 倍预算；
+    - FakeTarget 靠调用顺序推断重复序号，部分缓存命中时会错位，改成 runner 设置的上下文变量 `current_repeat`；
+    - 同一个组合评分器写法不同时 id 不同，改成规范化后再生成 id。
+    - 修复过程中另一个已有测试抓到 `from_spec` 把生成器遍历两遍的 bug。
+  - /simplify 采纳的简化：
+    - 原子写入和 JSONL 读取合并到 `files.py`，脱敏规则只编译一次，Output 和 Score 的脱敏收进 `Redactor`；
+    - `execute` 拆成运行单个配置和生成记录两步，自检分成只看生成结果的和依赖分数的两类（`SCORE_DERIVED`）；
+    - 配置名唯一、未知 pack、`redact` 写法都在加载 Suite 时检查；
+    - 删掉没用到的代码，评分器 id 缓存起来不再重复计算。
+  - /simplify 未采纳：
+    - p50 改用最近秩法：§8.1 定为 `statistics.median`，迁移 lite-rag 时数字才能一致；
+    - 缓存读写放到线程里：在几千个用例的规模下，切换线程的开销比省下的还多；
+    - 多个配置并发执行：会改变并发、预算、setup 的语义，需要另做设计决定；
+    - 运行目录流式写入：目前用不上。
+  - Codex 5 条：
+    - 采纳 4 条，都先写失败的测试：
+      - 预算用完时，最后一次传输错误的失败结果被丢掉；
+      - Suite 在根目录之外时 `rescore` 用不了，改为记录带 `..` 的相对路径；
+      - `token=abc}` 会把右括号一起替换掉；
+      - 运行目录里重复的输出会悄悄覆盖，改为读取时拒绝。
+    - 不采纳 1 条（“并发时 `max_calls` 会被超出”）：检查预算和计数之间没有 `await`，asyncio 是单线程的，不会被插进来。加了 `test_max_calls_is_exact_under_concurrency` 证明这一点。
 
 ## 17. 已定的开工问题（2026-11-13）
 
@@ -966,6 +1003,7 @@ runner 开始时会把要执行的命令或 URL 打印出来。
 - **`identical_scores`**：
   - 条件：同一个 Suite、同一个数据集哈希下，两次运行的 `target.config` 不同，但所有评分器的逐用例分数完全相同。
   - 动作：给两次运行都加上这个警告。
+  - 范围：只比较**同一次 `lite-eval run` 调用**里的各个配置。运行记录写成后不可变，不能回头给旧运行加警告（E1 定）。
 - **`feature_not_exercised`**：
   - Suite 可以声明 `expect_features: [merge, …]`；
   - Target 在 trace 里用 `kind="decision"` 的 span 加 `attrs.feature` 标明实际触发了哪个功能；
@@ -974,7 +1012,12 @@ runner 开始时会把要执行的命令或 URL 打印出来。
   - 测试里，自写的 hit@k、MRR、nDCG 必须和 ranx 在一组固定的样例运行上一致；
   - `lite-eval run --crosscheck` 会在运行时用 ranx 再算一遍，差值超过 1e-9 就给出警告。
 - **`within_noise`**：定义见 §18.1。
-- **其他**：`all_failed`（所有用例都失败）、`empty_group`（某个标签分组没有用例）、`synthetic_dataset`（数据集是合成的）。
+- **其他**：
+  - `all_failed`：有输出，但没有一个分数通过或大于 0。
+  - `empty_group`：Suite 用 `expect_tags: {kind: [fact, multihop]}` 声明期望的分组，某个值没有用例时警告（分组来自标签，不声明就无从知道“该有却没有”）。
+  - `synthetic_dataset`：`dataset.yaml` 写了 `synthetic: true`，或有用例的 `provenance.synthetic` 为真。
+  - `unversioned_target`：`versions()` 为空，引擎或模型换了缓存也看不出来。
+  - `budget_exhausted`、`cache_corrupt`、`secret_scan_allowed`、`secret_scan_allow_unused`：见 §6、§18.5、§18.12。
 
 ### 18.18 setup 共享与预热
 
@@ -995,3 +1038,40 @@ runner 开始时会把要执行的命令或 URL 打印出来。
   - `require_significant: false`（默认）：`delta < −max_drop` 就失败。
   - `require_significant: true`：`delta < −max_drop`，**并且**这次下降按 §18.2 显著，才失败。用来避免小样本上的噪声拦下合并；报告里照样列出不显著的下降。
 - **重复运行**：只看均值，不看单次重复；`within_noise` 警告（§18.1）只报告，不改变门禁结论。
+
+### 18.20 Suite 与 Python Target 的接入（E1 定）
+
+- **评测根目录**：
+  - Suite 在 `<root>/suites/x.yaml` 时，根目录是 `<root>`；否则是 Suite 文件所在目录。可以用 `--root` 或 `LITE_EVAL_ROOT` 覆盖。
+  - 运行目录在 `<root>/runs/<suite>/<run_id>/`，缓存在 `<root>/.lite-eval/cache/`。
+  - Suite 里 `dataset:` 的相对路径按 Suite 文件所在目录解析。
+  - `run.json` 里的 `suite.path` 记相对根目录的路径（Suite 在根目录之外时带 `..`），不写本机的绝对路径；`rescore` 靠它找回 Suite。
+- **Python Target**：
+  - 写法：`python: module:factory`。`configs:` 的每一项是一个 dict，`name` 必填（只能是小写字母、数字、`.`、`_`、`-`，它进 run_id 和目录名），其余键作为关键字参数调用 `factory(**params)`。
+  - 模块从根目录的上一级（使用方的仓库根）导入，只在导入期间放进 `sys.path`。
+  - 返回值必须满足 §5.3 的协议；可选属性 `deterministic: bool`（默认 True），为 False 时、Suite 没写 `repeats` 就跑 2 次。
+  - 当前是第几次重复：runner 在每次调用 `run(case)` 前设置上下文变量 `lite_eval.targets.base.current_repeat`（从 0 开始），想按重复次数取种子的 Target 读它；`run` 的签名不变。
+- **Suite 字段（E1）**：
+  - 字段：`schema_version, name, pack?, dataset, targets[{python, configs}], scorers[], metrics[], repeats?, concurrency, timeout_s, seed, budget{max_cost_usd, max_calls}, redact[], expect_features[], expect_tags{}, allow_paid_in_ci, cache (auto|on|off), gate`。
+  - 未知字段报错（退出码 2）。
+  - `gate` 原样记进 `run.json`，从 E2 起才执行。
+  - 不写 `pack` 时必须写 `scorers`。E1 只有 cost pack，它随每次运行出。
+- **评分器的写法**：
+  - 字符串，例如 `exact_match`；或带参数的 dict，例如 `{name: contains, case_sensitive: false, field: answer}`；组合写成 `{all_of: […]}`、`{any_of: […]}`、`{weighted: [{scorer: …, weight: 2}, …]}`。
+  - 规范形式：没有参数时是名字本身，有参数时是 `{名字: 参数}`，组合是 `{op: [子评分器的规范形式]}`、`{weighted: [{scorer, weight}]}`（weight 记为浮点数）。Suite 写法 `{name: …}` 和记录写法 `{名字: 参数}` 都先规范化，所以同一个评分器不管怎么写，id 都一样（E2 按 id 配对）。
+  - 记录里的评分器名是规范形式的规范 JSON（没有参数时就是名字）。`rescore` 靠它重建评分器。
+  - E1 的确定性评分器：`exact_match`、`contains`、`regex`、`keywords`、`must_not`、`set_recall`、`set_precision`。共同参数：`field`（输出里的路径）、`expected`（`case.expected` 里的路径）、`case_sensitive`。
+  - `all_of`：值取最小、全部通过才算通过；`any_of`：值取最大、任一通过即通过；`weighted`：加权平均，`passed` 为空。每个子评分器的结果放在组合分数的 `evidence` 里。
+- **runner 的细节**：
+  - 出错的输出不写缓存，下次重新生成；超时、偶发错误不会被缓存固定下来。
+  - 每个输出（包括缓存命中的）都按**当前** Suite 的规则脱敏后才写进运行记录：规则增加后，旧缓存里的内容不会原样漏出；脱敏改变了内容时，缓存条目同时被替换。
+  - 评分用的是脱敏之后的输出，所以 `rescore`（读运行目录里已脱敏的输出）和第一次打分结果一致。
+  - 预算：整个 Suite（一次 `run` 调用的所有配置）共用一份。`max_calls` 按每次调用计数（重试也算），在并发下也是精确的（检查和计数之间没有 `await`）；`max_cost_usd` 在花费**超过**上限后停，所以 `max_cost_usd: 0` 仍然允许免费调用，并发时已经发出的调用可能让花费略超上限。
+  - 传输错误后，预算不允许再试就不等待、不重试，这次失败照样记为 `exception` 输出并计入分母。
+  - 一个输出都没有的配置记为 `status=failed`，照样写运行目录，退出码 3。
+  - 各配置按名字顺序依次执行，配置内的用例并发执行。
+- **`rescore`**：
+  - 从运行目录读输出，从 `suite.path` 找回 Suite 和数据集。数据集哈希变了就拒绝（退出码 2），应该重新生成。
+  - 读运行目录时，同一个 `(case_id, repeat)` 出现两次就拒绝（退出码 2）：被改过的记录不能悄悄得出一个错的汇总。
+  - 新 run 的 `cost.calls` 为 0，`cache` 清零，`rescored_from` 指向原 run。
+  - `--scorer` 可以重复给，写法是名字或 JSON（Suite 写法或记录里的写法都行）。

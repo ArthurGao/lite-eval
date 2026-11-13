@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "run_id": "20261113T090000000000Z-plain-a1b2c3",
+  "suite": {
+    "name": "demo-suite",
+    "path": "suites/s.yaml",
+    "sha256": "1c66c7039657a5bcdfe89dd2b48312fcdca36456a0d9fd7b6ed076225546b8dc"
+  },
+  "target": {
+    "name": "fake",
+    "config": {
+      "name": "plain",
+      "mode": "echo"
+    },
+    "versions": {
+      "fake": "1"
+    },
+    "info": {
+      "host": "fake"
+    },
+    "billing": "free"
+  },
+  "dataset": {
+    "name": "demo",
+    "version": "1",
+    "hash": "87237f2253bd1f21341af31c35acf34369c12f84f42551b76cf53cdfb9dc5855",
+    "pack": null,
+    "synthetic": false
+  },
+  "scorers": [
+    {
+      "name": "exact_match",
+      "version": "1"
+    }
+  ],
+  "repeats": 1,
+  "seed": 0,
+  "concurrency": 4,
+  "timeout_s": 120.0,
+  "redact": {
+    "rules": [],
+    "patterns": {}
+  },
+  "started_at": "2026-11-13T09:00:00Z",
+  "finished_at": "2026-11-13T09:00:01Z",
+  "host": "fixture-host",
+  "lite_eval_version": "0.0.0",
+  "git_sha": null,
+  "git_dirty": null,
+  "status": "complete",
+  "summary": {
+    "n_cases": 3,
+    "repeats": 1,
+    "case_weight": 0.3333333333333333,
+    "outputs_expected": 3,
+    "outputs_recorded": 3,
+    "metrics": {
+      "exact_match": {
+        "value": 0.6666666666666666,
+        "min": 0.6666666666666666,
+        "max": 0.6666666666666666,
+        "per_repeat": [
+          0.6666666666666666
+        ]
+      },
+      "exact_match:pass_rate": {
+        "value": 0.6666666666666666,
+        "min": 0.6666666666666666,
+        "max": 0.6666666666666666,
+        "per_repeat": [
+          0.6666666666666666
+        ]
+      }
+    },
+    "groups": {
+      "kind": {
+        "fact": {
+          "exact_match": 0.5,
+          "exact_match:pass_rate": 0.5
+        },
+        "math": {
+          "exact_match": 1.0,
+          "exact_match:pass_rate": 1.0
+        }
+      }
+    },
+    "target_errors": {
+      "timeout": 1
+    },
+    "scoring_errors": {}
+  },
+  "cost": {
+    "calls": 3,
+    "input_tokens": 30,
+    "output_tokens": 15,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0,
+    "usage_unknown": 0,
+    "latency_p50_ms": 12.0,
+    "latency_p95_ms": 12.0
+  },
+  "warnings": [],
+  "cache": {
+    "hits": 0,
+    "misses": 3
+  },
+  "ci": {
+    "ci_mode": false,
+    "paid_allowed": false
+  },
+  "rescored_from": null,
+  "gate": null
+}

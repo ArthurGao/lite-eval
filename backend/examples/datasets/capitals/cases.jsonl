@@ -1,0 +1,3 @@
+{"id": "au", "input": {"country": "Australia"}, "expected": "Canberra", "tags": {"case": "proper"}}
+{"id": "jp", "input": {"country": "japan"}, "expected": "Tokyo", "tags": {"case": "lower"}}
+{"id": "nz", "input": {"country": "New Zealand"}, "expected": "Wellington", "tags": {"case": "proper"}}
