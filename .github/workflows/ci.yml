@@ -26,6 +26,22 @@ jobs:
       - run: uv run pytest -v   # fakes only; `-m ollama` (real local models) stays local
       - run: uv run lite-eval --help   # the real console entry point, not only CliRunner
 
+  # The declared lower bounds are real: every direct dependency at its lowest allowed version
+  # (pyproject.toml ranges, AGENTS.md rule 13), the whole suite.
+  lowest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2   # v10.3.3
+        with:
+          version: "0.10.8"
+      - run: uv venv --python 3.12
+      - run: uv pip install --resolution lowest-direct -e ".[server,ranking,judge]" pytest==9.2.0 pytest-asyncio==1.5.0
+      - run: .venv/bin/python -m pytest -v
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

@@ -5,34 +5,39 @@ description = "A general evaluation module for AI applications: generate once, s
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12,<3.13"
-# Exact pins (AGENTS.md rule 13). Verified APIs: tests/unit/test_dependencies.py and the project KB
-# reference/dependencies.md. Upgrading one means re-running those tests first.
+# Other projects import lite-eval as a library, so runtime dependencies are ranges: the lower
+# bound is the oldest version the test suite passes on (CI job `lowest`, `--resolution
+# lowest-direct`), the upper bound the next major. uv.lock pins exact versions for lite-eval's
+# own runs and CI (`uv sync --locked`); tests/unit/test_dependencies.py pins the APIs relied on.
+# AGENTS.md rule 13.
 dependencies = [
-    "pydantic==2.14.3",
-    "pydantic-settings==2.16.2",
-    "typer==0.29.1",
-    "jinja2==3.1.6",
-    "pyyaml==6.0.3",
+    "pydantic>=2.9,<3",
+    "pydantic-settings>=2.6,<3",
+    "typer>=0.19,<1",
+    "jinja2>=3.1,<4",
+    "pyyaml>=6.0.1,<7",  # 6.0 has no Python 3.12 wheel and does not build
     # httpx2, not httpx: the openai SDK (judges, E5) and mcp already run on httpx2; one HTTP client per process.
-    "httpx2==2.16.0",
+    "httpx2>=2.16,<3",
     # Paired bootstrap for comparisons (design §18.2): 10 000 resamples need vectorised sums.
-    "numpy==2.5.4",
+    "numpy>=2.0,<3",
 ]
 
 [project.optional-dependencies]
 # The Viewer's API (E3).
 server = [
-    "fastapi==0.162.5",
-    "uvicorn==0.54.0",
+    "fastapi>=0.133,<1",  # the oldest that accepts starlette 1.2
+    # 1.2.0 is the first Starlette whose TestClient runs on httpx2 (one HTTP client per process).
+    "starlette>=1.2.0,<2",
+    "uvicorn>=0.32,<1",
 ]
 # Ranking metrics cross-check and statistics (E2).
 ranking = [
-    "ranx==0.3.21",
-    "scipy==1.18.1",
+    "ranx>=0.3.21,<0.4",
+    "scipy>=1.13,<2",
 ]
 # Model judges through an OpenAI-compatible endpoint (E5).
 judge = [
-    "openai==3.50.0",
+    "openai>=3.46,<4",
 ]
 
 [project.scripts]

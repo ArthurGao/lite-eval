@@ -64,8 +64,11 @@ If a change must contradict the design, update the design in the same change and
 11. **No customer material, real names or keys in datasets or fixtures.** Redact before writing run records when a
     suite asks for it. Secrets only from environment variables; never commit `.env*` except `.env.example`.
 12. **The Viewer binds loopback only.** It writes nothing but annotations.
-13. **Pinned dependencies** (ranx, pydantic, fastapi, …): exact versions in `pyproject.toml`; verify third-party APIs
-    in the installed source or context7, never from memory.
+13. **Dependencies**: other projects import lite-eval, so `pyproject.toml` declares ranges for runtime dependencies
+    (lower bound = the oldest version the suite passes on, checked by the CI job `lowest`; upper bound = next major);
+    `uv.lock` pins exact versions and every run uses `uv sync --locked`. Dev tools stay exact. Verify third-party
+    APIs in the installed source or context7, never from memory (decided 2026-11-14, when lite-rag's docling extra
+    could not resolve against `typer==0.29.1`).
 
 ## Local environment
 
