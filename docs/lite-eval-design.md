@@ -694,6 +694,11 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
     - wheel 和 sdist 缺 LICENSE：先写失败的 `test_packaging.py`，再复制 `backend/LICENSE`，测试同时断言两份内容相同；
     - 删掉无意义的 `binomtest(0, 1)` 断言；
     - 阶段状态和阶段记录对齐。
+  - 第一次 CI 是红的（`3484fe0`）：`test_help_exits_zero_and_names_the_tool` 失败。
+    - 原因：typer 0.29.1 在设置了 `GITHUB_ACTIONS`、`FORCE_COLOR` 或 `PY_COLORS` 时强制输出彩色终端，ANSI 码把 `Usage: lite-eval` 隔开了；本地输出不是终端，没有颜色。
+    - 本地用 `GITHUB_ACTIONS=true uv run pytest` 复现了失败。
+    - 修法：`tests/conftest.py` 设 `_TYPER_FORCE_DISABLE_TERMINAL=1`。typer 在 import 时读这个开关，和 `TERMINAL_WIDTH` 放在同一处。
+    - 修完后三种变量下测试都通过。
 
 ## 17. 已定的开工问题（2026-11-13）
 
