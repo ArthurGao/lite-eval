@@ -132,11 +132,33 @@ def test_api_key_values_stop_at_closing_delimiters(text: str, expected: str) -> 
     assert KEYS.text(text) == expected
 
 
+def test_a_url_password_of_any_length_is_redacted() -> None:
+    password = "p@/a://b:" + "x" * 1500  # also holds something that looks like a URL start
+
+    assert CONN.text(f"dsn postgresql://app:{password}@db:5432/x end") == (
+        f"dsn postgresql://app:{R}@db:5432/x end"
+    )
+
+
+def test_two_urls_in_one_token_both_lose_their_password() -> None:
+    text = "DSNS=postgresql://u:p1@db/x,redis://:p2@cache/0"
+
+    assert CONN.text(text) == f"DSNS=postgresql://u:{R}@db/x,redis://:{R}@cache/0"
+
+
+def test_an_at_sign_in_a_later_token_does_not_end_a_url_password() -> None:
+    text = "see postgresql://app:8080 then ask @ops/channel"
+
+    assert CONN.text(text) == text
+
+
 ADVERSARIAL = {
     # Each starts a match attempt at many positions; an unbounded run makes that quadratic.
     "many url starts": "a://b:" * 17_000,
     "dotted run": "a." * 50_000,
     "hyphenated run": "a-" * 50_000,
+    "url starts with at-signs": "a://b:@" * 15_000,
+    "dotted run before an at-host": "a." * 50_000 + "@db/x",
 }
 
 
