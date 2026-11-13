@@ -216,3 +216,16 @@ def test_the_seeded_bootstrap_interval_is_pinned() -> None:
 
     assert low == pytest.approx(0.023333333333333317, abs=1e-12)
     assert high == pytest.approx(0.13033333333333336, abs=1e-12)
+
+
+def test_a_comparison_names_its_configs_and_each_change_says_which_way(tmp_path: Path) -> None:
+    """The browser never decides what got worse (frontend rule 2): the API says it."""
+    a = run_one(tmp_path, wrong("q01"), name="base")
+    b = run_one(tmp_path, wrong("q02"), name="cand")
+    c = compare_runs(a.directory, b.directory)
+
+    assert (c.baseline_config, c.candidate_config) == ("base", "cand")
+    assert [(x.case_id, x.kind, x.direction) for x in c.changes] == [
+        ("q02", "regressed", "worse"),
+        ("q01", "fixed", "better"),
+    ]

@@ -307,12 +307,17 @@ class CaseChange(_Record):
     kind: CaseChangeKind  # regressed / fixed: a pass flipped; changed: a continuous value moved
     baseline: float
     candidate: float
+    # E3: which way the case moved, decided here so no reader re-derives it (scores: higher is
+    # better). None in a comparison serialised before E3.
+    direction: Literal["worse", "better"] | None = None
 
 
 class Comparison(_Record):
     schema_version: int = SCHEMA_VERSION
     baseline_run: str
     candidate_run: str
+    baseline_config: str = ""  # E3: the configs' names, so a reader need not load both records
+    candidate_config: str = ""
     dataset: str
     overlap: Literal["full", "partial_overlap"]
     changed_cases: list[str] = Field(default_factory=list)  # same id, different content

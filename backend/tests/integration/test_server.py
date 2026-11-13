@@ -277,3 +277,22 @@ def test_without_a_frontend_build_the_api_still_works(
         page = c.get("/")
         assert page.status_code == 503 and "build_frontend.py" in page.text
         assert c.get("/api/runs").json()["total"] == 2
+
+
+def test_a_whole_large_run_can_be_listed(
+    client: TestClient, runs: tuple[RunResult, RunResult]
+) -> None:
+    """No silent cap at 1000 cases: the strip, the table and triage list every case."""
+    a, _ = runs
+    response = client.get(f"/api/runs/{ref(a)}/cases", params={"limit": 50_000})
+    assert response.status_code == 200 and response.json()["limit"] == 50_000
+
+
+def test_the_export_format_is_in_the_spec() -> None:
+    """The frontend types an exported page from the spec, not by hand."""
+    import json
+
+    spec = json.loads((Path(__file__).parents[2] / "openapi.json").read_text())
+    payload = spec["components"]["schemas"]["ExportPayload"]
+    assert set(payload["required"]) >= {"kind", "runs", "comparison", "start"}
+    assert "ExportedRun" in spec["components"]["schemas"]

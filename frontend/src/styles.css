@@ -1,0 +1,113 @@
+@import 'tailwindcss';
+
+/*
+ * The Viewer's tokens (direction: dense-data; surface brief .impeccable/surfaces/frontend-src.md).
+ * Colour does status work only. "worse" / "better" are the Okabe-Ito orange / blue pair, validated
+ * with the dataviz validator in both themes (CVD dE >= 26); each also carries an icon and a word.
+ * Marks use *-mark, text uses *-text (>= 4.5:1 on the surface). Selection and focus are slate,
+ * never the "better" blue.
+ */
+:root {
+  /* "system" follows the OS; the theme toggle pins it with data-theme (lib/theme.ts). */
+  color-scheme: light dark;
+  --canvas: light-dark(#eef1f4, #0f1215);
+  --surface: light-dark(#fbfcfd, #15181c);
+  --raised: light-dark(#ffffff, #1b1f24);
+  --ink: light-dark(#111827, #e6e9ee);
+  --ink-2: light-dark(#4b5563, #b6bdc8);
+  --muted: light-dark(#6b7280, #8b94a3);
+  --rule: light-dark(#e3e7ec, #262b32);
+  --rule-strong: light-dark(#c9d0d8, #353c45);
+  --select: light-dark(#e3e8f0, #252c37);
+  --hover: light-dark(#f1f4f7, #1d2228);
+  --focus: light-dark(#3d4f7a, #8ea6d6);
+  --worse-mark: light-dark(#c4560a, #d46a28);
+  --worse-text: light-dark(#a8470a, #ee9a63);
+  --worse-wash: light-dark(#fbeee5, #2b1d14);
+  --better-mark: light-dark(#2a6fd0, #4d8fe6);
+  --better-text: light-dark(#1f5cb0, #7db0f0);
+  --better-wash: light-dark(#e8f0fb, #14223a);
+  --neutral-mark: light-dark(#7d8794, #77808e);
+  --warn-mark: light-dark(#b7791f, #e0b04a);
+  --warn-text: light-dark(#8a5a12, #e8c06a);
+  --warn-wash: light-dark(#fbf3e2, #2a2312);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+  --color-select: var(--select);
+  --color-hover: var(--hover);
+  --color-focus: var(--focus);
+  --color-worse-mark: var(--worse-mark);
+  --color-worse-text: var(--worse-text);
+  --color-worse-wash: var(--worse-wash);
+  --color-better-mark: var(--better-mark);
+  --color-better-text: var(--better-text);
+  --color-better-wash: var(--better-wash);
+  --color-neutral-mark: var(--neutral-mark);
+  --color-warn-mark: var(--warn-mark);
+  --color-warn-text: var(--warn-text);
+  --color-warn-wash: var(--warn-wash);
+}
+
+@layer base {
+  html {
+    font-size: 13px;
+    background: var(--canvas);
+  }
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
+  }
+  ::selection {
+    background: var(--select);
+    color: var(--ink);
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+    border-radius: 2px;
+  }
+  a {
+    text-underline-offset: 2px;
+  }
+  * {
+    scrollbar-color: var(--rule-strong) transparent;
+    scrollbar-width: thin;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0ms !important;
+      animation-duration: 0ms !important;
+    }
+  }
+}
+
+/* The texture channel: a case that errored or was never generated reads without colour. */
+.hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    currentColor 0 1.5px,
+    transparent 1.5px 4px
+  );
+}

@@ -5,9 +5,10 @@ Every route reads through `views` and the run catalog; the only write is an anno
 """
 
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, Query, Request
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
@@ -24,6 +25,7 @@ from lite_eval.views import (
     CasePage,
     DatasetCasePage,
     DatasetSummary,
+    ExportPayload,
     RunDetail,
     case_detail,
     case_page,
@@ -77,6 +79,9 @@ def create_app(
         docs_url=None,
         redoc_url=None,
         openapi_url="/api/openapi.json",
+        # operationId = the route function's name, so the generated client reads listRuns(),
+        # getCase() rather than getCaseApiRunsSuiteRunIdCasesCaseIdGet()
+        generate_unique_id_function=lambda route: route.name,
     )
     app.add_middleware(Guard, origins=origins, token=token)
 
@@ -129,7 +134,8 @@ def create_app(
         run_id: str,
         misses_only: bool = False,
         offset: Annotated[int, Query(ge=0)] = 0,
-        limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+        # no silent cap: the case strip and triage need every case of a large run
+        limit: Annotated[int, Query(ge=1, le=100_000)] = 100,
     ) -> CasePage:
         return case_page(root, suite, run_id, misses_only=misses_only, offset=offset, limit=limit)
 
@@ -189,4 +195,19 @@ def create_app(
     def unknown(rest: str) -> Response:
         return _error(404, f"no endpoint /api/{rest}", "not_found")
 
+    def openapi() -> dict[str, Any]:
+        """The routes' schema plus ExportPayload, which no route returns: an exported page reads
+        it from the HTML, and the frontend's type for it is generated from this spec."""
+        if app.openapi_schema is None:
+            schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+            export = ExportPayload.model_json_schema(
+                ref_template="#/components/schemas/{model}", mode="serialization"
+            )
+            components = schema.setdefault("components", {}).setdefault("schemas", {})
+            for name, definition in {**export.pop("$defs", {}), "ExportPayload": export}.items():
+                components.setdefault(name, definition)
+            app.openapi_schema = schema
+        return app.openapi_schema
+
+    app.openapi = openapi  # type: ignore[method-assign]
     return app

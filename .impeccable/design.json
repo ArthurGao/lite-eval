@@ -1,0 +1,857 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-13T22:27:18+00:00",
+  "title": "Design System: lite-eval Viewer",
+  "extensions": {
+    "colorMeta": {
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Slate Canvas",
+        "canonical": "#eef1f4",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242526",
+          "#404244",
+          "#5f6164",
+          "#808385",
+          "#a3a5a7",
+          "#c8c9cb",
+          "#eeeeef"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface Paper",
+        "canonical": "#fbfcfd",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#414242",
+          "#606162",
+          "#818283",
+          "#a4a5a6",
+          "#c9c9c9",
+          "#eeeeef"
+        ]
+      },
+      "raised": {
+        "role": "neutral",
+        "displayName": "Raised White",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#111827",
+        "tonalRamp": [
+          "#090b0f",
+          "#21252d",
+          "#3c424e",
+          "#596172",
+          "#7a8294",
+          "#9ea5b3",
+          "#c4c9d3",
+          "#ebeef4"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink 2",
+        "canonical": "#4b5563",
+        "tonalRamp": [
+          "#090b0e",
+          "#21252b",
+          "#3c434c",
+          "#59626f",
+          "#798391",
+          "#9ea6b1",
+          "#c4cad1",
+          "#ebeff3"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted",
+        "canonical": "#6b7280",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#22252b",
+          "#3e424b",
+          "#5b616e",
+          "#7c828f",
+          "#a0a5af",
+          "#c5c9d1",
+          "#eceef3"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#e3e7ec",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#242527",
+          "#404245",
+          "#5e6165",
+          "#7f8387",
+          "#a3a5a8",
+          "#c7c9cc",
+          "#edeef0"
+        ]
+      },
+      "rule-strong": {
+        "role": "neutral",
+        "displayName": "Strong Hairline",
+        "canonical": "#c9d0d8",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232528",
+          "#3e4247",
+          "#5c6268",
+          "#7d838a",
+          "#a1a5ab",
+          "#c6c9cd",
+          "#edeff1"
+        ]
+      },
+      "select": {
+        "role": "neutral",
+        "displayName": "Slate Selection",
+        "canonical": "#e3e8f0",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232528",
+          "#3f4247",
+          "#5e6168",
+          "#7f8389",
+          "#a2a5aa",
+          "#c7c9cd",
+          "#edeef1"
+        ]
+      },
+      "hover": {
+        "role": "neutral",
+        "displayName": "Hover Wash",
+        "canonical": "#f1f4f7",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242526",
+          "#404244",
+          "#5f6164",
+          "#808385",
+          "#a3a5a7",
+          "#c8c9cb",
+          "#eeeeef"
+        ]
+      },
+      "focus": {
+        "role": "neutral",
+        "displayName": "Focus Slate",
+        "canonical": "#3d4f7a",
+        "tonalRamp": [
+          "#070b14",
+          "#1d2537",
+          "#35415e",
+          "#4f6088",
+          "#6f82ab",
+          "#96a5c6",
+          "#bec9e1",
+          "#e8effd"
+        ]
+      },
+      "worse-mark": {
+        "role": "primary",
+        "displayName": "Worse Orange",
+        "canonical": "#c4560a",
+        "tonalRamp": [
+          "#190500",
+          "#411600",
+          "#6e2a00",
+          "#9f4000",
+          "#c5632c",
+          "#dd8f68",
+          "#f4ba9f",
+          "#ffe6d6"
+        ]
+      },
+      "worse-text": {
+        "role": "primary",
+        "displayName": "Worse Orange Text",
+        "canonical": "#a8470a",
+        "tonalRamp": [
+          "#180501",
+          "#3f1804",
+          "#6b2d0b",
+          "#9a4415",
+          "#c0673b",
+          "#d99171",
+          "#f0bca4",
+          "#ffe7d9"
+        ]
+      },
+      "worse-wash": {
+        "role": "primary",
+        "displayName": "Worse Orange Wash",
+        "canonical": "#fbeee5",
+        "tonalRamp": [
+          "#0d0b09",
+          "#292421",
+          "#47403b",
+          "#695f58",
+          "#8a8079",
+          "#aca39d",
+          "#cec8c4",
+          "#f1eeeb"
+        ]
+      },
+      "better-mark": {
+        "role": "primary",
+        "displayName": "Better Blue",
+        "canonical": "#2a6fd0",
+        "tonalRamp": [
+          "#020b1e",
+          "#08244b",
+          "#15407d",
+          "#225fb3",
+          "#4581d9",
+          "#77a7ec",
+          "#a9cbfd",
+          "#dcf0ff"
+        ]
+      },
+      "better-text": {
+        "role": "primary",
+        "displayName": "Better Blue Text",
+        "canonical": "#1f5cb0",
+        "tonalRamp": [
+          "#020b1c",
+          "#0c2447",
+          "#1b4177",
+          "#2b60ab",
+          "#4d82d0",
+          "#7ca7e4",
+          "#adcbf8",
+          "#def0ff"
+        ]
+      },
+      "better-wash": {
+        "role": "primary",
+        "displayName": "Better Blue Wash",
+        "canonical": "#e8f0fb",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#222529",
+          "#3e4248",
+          "#5c626a",
+          "#7c838c",
+          "#a0a5ad",
+          "#c6c9cf",
+          "#eceff2"
+        ]
+      },
+      "neutral-mark": {
+        "role": "secondary",
+        "displayName": "Not-Significant Grey",
+        "canonical": "#7d8794",
+        "tonalRamp": [
+          "#090b0e",
+          "#22252a",
+          "#3c434a",
+          "#5a626d",
+          "#7a838f",
+          "#9fa6af",
+          "#c4cad0",
+          "#eceff3"
+        ]
+      },
+      "warn-mark": {
+        "role": "secondary",
+        "displayName": "Weathered Amber",
+        "canonical": "#b7791f",
+        "tonalRamp": [
+          "#140800",
+          "#371f00",
+          "#5e3800",
+          "#885400",
+          "#ac752b",
+          "#c89c68",
+          "#e3c39f",
+          "#feebd6"
+        ]
+      },
+      "warn-text": {
+        "role": "secondary",
+        "displayName": "Weathered Amber Text",
+        "canonical": "#8a5a12",
+        "tonalRamp": [
+          "#120901",
+          "#342006",
+          "#593b10",
+          "#82571c",
+          "#a57840",
+          "#c29e74",
+          "#dec4a7",
+          "#fbecdb"
+        ]
+      },
+      "warn-wash": {
+        "role": "secondary",
+        "displayName": "Weathered Amber Wash",
+        "canonical": "#fbf3e2",
+        "tonalRamp": [
+          "#0c0b08",
+          "#28251f",
+          "#464238",
+          "#676154",
+          "#888274",
+          "#aaa49a",
+          "#ccc9c1",
+          "#f0eeea"
+        ]
+      },
+      "canvas-dark": {
+        "role": "neutral",
+        "displayName": "Slate Canvas (dark theme)",
+        "canonical": "#0f1215",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#242527",
+          "#404245",
+          "#5e6265",
+          "#7f8386",
+          "#a2a5a8",
+          "#c7c9cb",
+          "#edeef0"
+        ]
+      },
+      "surface-dark": {
+        "role": "neutral",
+        "displayName": "Surface Paper (dark theme)",
+        "canonical": "#15181c",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#242527",
+          "#404245",
+          "#5e6166",
+          "#7f8387",
+          "#a2a5a9",
+          "#c7c9cc",
+          "#edeef0"
+        ]
+      },
+      "raised-dark": {
+        "role": "neutral",
+        "displayName": "Raised White (dark theme)",
+        "canonical": "#1b1f24",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#232528",
+          "#3f4246",
+          "#5d6267",
+          "#7e8388",
+          "#a2a5aa",
+          "#c7c9cd",
+          "#edeff0"
+        ]
+      },
+      "ink-dark": {
+        "role": "neutral",
+        "displayName": "Ink (dark theme)",
+        "canonical": "#e6e9ee",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#404245",
+          "#5f6165",
+          "#808286",
+          "#a3a5a8",
+          "#c8c9cb",
+          "#eeeef0"
+        ]
+      },
+      "ink-2-dark": {
+        "role": "neutral",
+        "displayName": "Ink 2 (dark theme)",
+        "canonical": "#b6bdc8",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232529",
+          "#3e4249",
+          "#5c626a",
+          "#7d838c",
+          "#a1a5ad",
+          "#c6c9cf",
+          "#edeff2"
+        ]
+      },
+      "muted-dark": {
+        "role": "neutral",
+        "displayName": "Muted (dark theme)",
+        "canonical": "#8b94a3",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#22252b",
+          "#3d424b",
+          "#5a626e",
+          "#7b8390",
+          "#9fa5b0",
+          "#c5c9d1",
+          "#eceff3"
+        ]
+      },
+      "rule-dark": {
+        "role": "neutral",
+        "displayName": "Hairline (dark theme)",
+        "canonical": "#262b32",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232529",
+          "#3f4247",
+          "#5d6269",
+          "#7d838a",
+          "#a1a5ab",
+          "#c6c9ce",
+          "#edeff1"
+        ]
+      },
+      "rule-strong-dark": {
+        "role": "neutral",
+        "displayName": "Strong Hairline (dark theme)",
+        "canonical": "#353c45",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#222529",
+          "#3e4249",
+          "#5b626b",
+          "#7c838c",
+          "#a0a6ad",
+          "#c5c9cf",
+          "#eceff2"
+        ]
+      },
+      "select-dark": {
+        "role": "neutral",
+        "displayName": "Slate Selection (dark theme)",
+        "canonical": "#252c37",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#22252a",
+          "#3d424a",
+          "#5b626d",
+          "#7b838f",
+          "#9fa5af",
+          "#c5c9d0",
+          "#eceff3"
+        ]
+      },
+      "hover-dark": {
+        "role": "neutral",
+        "displayName": "Hover Wash (dark theme)",
+        "canonical": "#1d2228",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232528",
+          "#3f4247",
+          "#5c6268",
+          "#7d838a",
+          "#a1a5ab",
+          "#c6c9cd",
+          "#edeff1"
+        ]
+      },
+      "focus-dark": {
+        "role": "neutral",
+        "displayName": "Focus Slate (dark theme)",
+        "canonical": "#8ea6d6",
+        "tonalRamp": [
+          "#070b14",
+          "#1c2537",
+          "#34425e",
+          "#4e6188",
+          "#6e82ab",
+          "#95a5c6",
+          "#bdcae1",
+          "#e7effd"
+        ]
+      },
+      "worse-mark-dark": {
+        "role": "primary",
+        "displayName": "Worse Orange (dark theme)",
+        "canonical": "#d46a28",
+        "tonalRamp": [
+          "#190500",
+          "#401700",
+          "#6d2c00",
+          "#9c4200",
+          "#c2652d",
+          "#db9069",
+          "#f2bba0",
+          "#ffe7d7"
+        ]
+      },
+      "worse-text-dark": {
+        "role": "primary",
+        "displayName": "Worse Orange Text (dark theme)",
+        "canonical": "#ee9a63",
+        "tonalRamp": [
+          "#160701",
+          "#3b1c05",
+          "#64330e",
+          "#914d19",
+          "#b56e3e",
+          "#d09673",
+          "#e9bfa6",
+          "#ffe9da"
+        ]
+      },
+      "worse-wash-dark": {
+        "role": "primary",
+        "displayName": "Worse Orange Wash (dark theme)",
+        "canonical": "#2b1d14",
+        "tonalRamp": [
+          "#0e0a08",
+          "#2a231f",
+          "#4a3f39",
+          "#6d5e54",
+          "#8f7f75",
+          "#afa29a",
+          "#d0c7c1",
+          "#f3edea"
+        ]
+      },
+      "better-mark-dark": {
+        "role": "primary",
+        "displayName": "Better Blue (dark theme)",
+        "canonical": "#4d8fe6",
+        "tonalRamp": [
+          "#020b1c",
+          "#0a2547",
+          "#184276",
+          "#2761aa",
+          "#4983d0",
+          "#7ba7e4",
+          "#abccf7",
+          "#ddf0ff"
+        ]
+      },
+      "better-text-dark": {
+        "role": "primary",
+        "displayName": "Better Blue Text (dark theme)",
+        "canonical": "#7db0f0",
+        "tonalRamp": [
+          "#040b17",
+          "#12263e",
+          "#254369",
+          "#386397",
+          "#5985bb",
+          "#85a8d3",
+          "#b3cceb",
+          "#e2f0ff"
+        ]
+      },
+      "better-wash-dark": {
+        "role": "primary",
+        "displayName": "Better Blue Wash (dark theme)",
+        "canonical": "#14223a",
+        "tonalRamp": [
+          "#080b11",
+          "#1e2531",
+          "#384254",
+          "#53627b",
+          "#73839e",
+          "#99a6bb",
+          "#c0cad9",
+          "#e9eff8"
+        ]
+      },
+      "neutral-mark-dark": {
+        "role": "secondary",
+        "displayName": "Not-Significant Grey (dark theme)",
+        "canonical": "#77808e",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#22252b",
+          "#3d424b",
+          "#5a626e",
+          "#7b838f",
+          "#9fa5b0",
+          "#c5c9d1",
+          "#eceff3"
+        ]
+      },
+      "warn-mark-dark": {
+        "role": "secondary",
+        "displayName": "Weathered Amber (dark theme)",
+        "canonical": "#e0b04a",
+        "tonalRamp": [
+          "#120900",
+          "#332100",
+          "#593c00",
+          "#815900",
+          "#a47b1a",
+          "#c0a061",
+          "#ddc69b",
+          "#faedd4"
+        ]
+      },
+      "warn-text-dark": {
+        "role": "secondary",
+        "displayName": "Weathered Amber Text (dark theme)",
+        "canonical": "#e8c06a",
+        "tonalRamp": [
+          "#110a00",
+          "#312200",
+          "#553e00",
+          "#7c5b00",
+          "#9f7d30",
+          "#bca26b",
+          "#dac7a1",
+          "#f8edd7"
+        ]
+      },
+      "warn-wash-dark": {
+        "role": "secondary",
+        "displayName": "Weathered Amber Wash (dark theme)",
+        "canonical": "#2a2312",
+        "tonalRamp": [
+          "#0d0b07",
+          "#28251d",
+          "#474235",
+          "#686150",
+          "#898270",
+          "#aaa596",
+          "#cdc9bf",
+          "#f1eee8"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page heading (run, comparison, dataset, triage)."
+      },
+      "headline-id": {
+        "displayName": "Headline Id",
+        "purpose": "Page heading when the subject is an id (case detail, triage focus case)."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section header inside its hairline bar."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Table cells, prose and controls; tabular figures."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Column headers, captions, legends, key-hint rows."
+      },
+      "micro": {
+        "displayName": "Micro",
+        "purpose": "Tags, kbd hints, chart axes, p-values beside a strip."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Case and run ids, hashes, git shas, warning codes, commands."
+      }
+    },
+    "shadows": [
+      {
+        "name": "dialog",
+        "value": "0 8px 28px rgba(0,0,0,0.18)",
+        "purpose": "The triage dialog, over a rgba(0,0,0,0.3) scrim."
+      },
+      {
+        "name": "tooltip",
+        "value": "0 4px 14px rgba(0,0,0,0.12)",
+        "purpose": "The trend chart's hover readout."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-change",
+        "value": "150ms",
+        "purpose": "Colour transitions on buttons and the case-cell vertical stretch on hover; zeroed under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      }
+    ],
+    "rootFontSize": {
+      "value": "13px",
+      "purpose": "html font-size; every rem-based token is a multiple of 13px (0.25rem = 3.25px)."
+    },
+    "hatch": {
+      "value": "repeating-linear-gradient(135deg, currentColor 0 1.5px, transparent 1.5px 4px)",
+      "purpose": "Texture channel for errored and never-generated cases; SVG equivalent for non-significant interval bands."
+    },
+    "focusRing": {
+      "value": "2px solid var(--focus); outline-offset: 1px",
+      "purpose": "Every :focus-visible element."
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one decisive action in a toolbar or dialog (Compare, Save).",
+      "html": "<button class=\"ds-btn-primary\">Save</button>",
+      "css": ".ds-btn-primary { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 6px; height: 22.75px; padding: 0 8px; font-size: 13px; font-weight: 500; color: var(--surface); background: var(--ink); border: 1px solid var(--ink); border-radius: 3.25px; cursor: pointer; transition: opacity 150ms, background-color 150ms; } .ds-btn-primary:hover { opacity: 0.9; } .ds-btn-primary:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; } .ds-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "The default button: pagers, Cancel, secondary toolbar actions.",
+      "html": "<button class=\"ds-btn-quiet\">Next</button>",
+      "css": ".ds-btn-quiet { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 6px; height: 22.75px; padding: 0 8px; font-size: 13px; font-weight: 500; color: var(--ink); background: var(--raised); border: 1px solid var(--rule-strong); border-radius: 3.25px; cursor: pointer; transition: background-color 150ms; } .ds-btn-quiet:hover { background: var(--hover); } .ds-btn-quiet:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }"
+    },
+    {
+      "name": "Select",
+      "kind": "input",
+      "refersTo": "select",
+      "description": "Native select for filters and run pickers.",
+      "html": "<label class=\"ds-field\">Status <select class=\"ds-select\"><option>any</option><option>partial</option></select></label>",
+      "css": ".ds-field { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); } .ds-select { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-variant-numeric: tabular-nums; height: 22.75px; padding: 0 5px; font-size: 13px; color: var(--ink); background: var(--raised); border: 1px solid var(--rule-strong); border-radius: 3.25px; } .ds-select:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }"
+    },
+    {
+      "name": "Top Navigation",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "Sticky 40px bar on the canvas; active link in ink with a 2px ink underline.",
+      "html": "<header class=\"ds-nav\"><a class=\"ds-nav-brand\" href=\"#\">lite-eval</a><nav class=\"ds-nav-links\"><a href=\"#\">Runs</a><a href=\"#\" class=\"is-active\">Compare</a><a href=\"#\">Datasets</a><a href=\"#\">Trends</a></nav></header>",
+      "css": ".ds-nav { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-variant-numeric: tabular-nums; display: flex; align-items: stretch; gap: 20px; height: 40px; padding: 0 13px; font-size: 13px; background: var(--canvas); border-bottom: 1px solid var(--rule); } .ds-nav-brand { display: flex; align-items: center; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); text-decoration: none; } .ds-nav-links { display: flex; gap: 3px; } .ds-nav-links a { display: flex; align-items: center; padding: 0 6.5px; color: var(--ink-2); text-decoration: none; border-bottom: 2px solid transparent; } .ds-nav-links a:hover { color: var(--ink); } .ds-nav-links a.is-active { color: var(--ink); border-bottom-color: var(--ink); } .ds-nav-links a:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }"
+    },
+    {
+      "name": "Run Mark Tags",
+      "kind": "chip",
+      "refersTo": "tag-plain",
+      "description": "Baseline, partial, warnings and synthetic marks, shown together wherever a run is listed.",
+      "html": "<span class=\"ds-tags\"><span class=\"ds-tag\">baseline</span><span class=\"ds-tag ds-tag-worse\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" width=\"12\" height=\"12\" aria-hidden=\"true\"><path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"/><path d=\"M12 9v4\"/><path d=\"M12 17h.01\"/></svg>partial</span><span class=\"ds-tag ds-tag-warn\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" width=\"12\" height=\"12\" aria-hidden=\"true\"><path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"/><path d=\"M12 9v4\"/><path d=\"M12 17h.01\"/></svg>2 warnings</span><span class=\"ds-tag\">synthetic</span></span>",
+      "css": ".ds-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; } .ds-tag { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 5px; font-size: 11px; font-weight: 500; white-space: nowrap; border-radius: 3.25px; background: var(--select); color: var(--ink-2); } .ds-tag-warn { background: var(--warn-wash); color: var(--warn-text); } .ds-tag-worse { background: var(--worse-wash); color: var(--worse-text); }"
+    },
+    {
+      "name": "Verdict Mark",
+      "kind": "custom",
+      "description": "A verdict as icon plus word: colour on the icon only, the word in ink-2.",
+      "html": "<span class=\"ds-verdicts\"><span class=\"ds-verdict\"><span class=\"ds-v-worse\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2.25\" width=\"14\" height=\"14\" aria-hidden=\"true\"><path d=\"m7 7 10 10\"/><path d=\"M17 7v10H7\"/></svg></span>worse</span><span class=\"ds-verdict\"><span class=\"ds-v-better\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2.25\" width=\"14\" height=\"14\" aria-hidden=\"true\"><path d=\"M7 7h10v10\"/><path d=\"M7 17 17 7\"/></svg></span>better</span><span class=\"ds-verdict\"><span class=\"ds-v-neutral\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2.25\" width=\"14\" height=\"14\" aria-hidden=\"true\"><path d=\"M5 12h14\"/></svg></span>not significant</span></span>",
+      "css": ".ds-verdicts { display: inline-flex; gap: 16px; } .ds-verdict { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; white-space: nowrap; color: var(--ink-2); } .ds-v-worse { color: var(--worse-mark); display: inline-flex; } .ds-v-better { color: var(--better-mark); display: inline-flex; } .ds-v-neutral { color: var(--neutral-mark); display: inline-flex; }"
+    },
+    {
+      "name": "Interval Strip",
+      "kind": "custom",
+      "description": "Signature mark: a delta and its 95% interval on a shared zero-centred scale; non-significant bands are hatched grey with a hollow point.",
+      "html": "<span class=\"ds-strips\"><svg class=\"ds-strip\" width=\"128\" height=\"18\" role=\"img\" aria-label=\"delta -0.120, 95% interval -0.180 to -0.050\"><line x1=\"0\" x2=\"128\" y1=\"9\" y2=\"9\" stroke=\"var(--rule-strong)\"/><line x1=\"64\" x2=\"64\" y1=\"1\" y2=\"17\" stroke=\"var(--ink-2)\"/><rect x=\"11\" y=\"5\" width=\"38\" height=\"8\" rx=\"2\" fill=\"var(--worse-mark)\"/><circle cx=\"29\" cy=\"9\" r=\"4\" fill=\"var(--worse-mark)\" stroke=\"var(--surface)\" stroke-width=\"2\"/></svg><svg class=\"ds-strip\" width=\"128\" height=\"18\" role=\"img\" aria-label=\"delta +0.030, 95% interval -0.040 to +0.090, not significant\"><defs><pattern id=\"ds-hatch\" width=\"4\" height=\"4\" patternUnits=\"userSpaceOnUse\" patternTransform=\"rotate(45)\"><rect width=\"4\" height=\"4\" fill=\"var(--surface)\"/><line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"4\" stroke=\"var(--neutral-mark)\" stroke-width=\"2\"/></pattern></defs><line x1=\"0\" x2=\"128\" y1=\"9\" y2=\"9\" stroke=\"var(--rule-strong)\"/><line x1=\"64\" x2=\"64\" y1=\"1\" y2=\"17\" stroke=\"var(--ink-2)\"/><rect x=\"52\" y=\"5\" width=\"38\" height=\"8\" rx=\"2\" fill=\"url(#ds-hatch)\" stroke=\"var(--neutral-mark)\"/><circle cx=\"73\" cy=\"9\" r=\"4\" fill=\"var(--surface)\" stroke=\"var(--neutral-mark)\" stroke-width=\"2\"/></svg></span>",
+      "css": ".ds-strips { display: inline-flex; flex-direction: column; gap: 8px; padding: 8px; background: var(--surface); } .ds-strip { overflow: visible; }"
+    },
+    {
+      "name": "Case Strip",
+      "kind": "custom",
+      "refersTo": "case-cell",
+      "description": "Signature overview: one cell per case in case order, each a link to its case; errored cells are hatched.",
+      "html": "<figure class=\"ds-casestrip\"><div class=\"ds-cells\"><a class=\"ds-cell\" href=\"#\" aria-label=\"q01: pass\"></a><a class=\"ds-cell\" href=\"#\" aria-label=\"q02: pass\"></a><a class=\"ds-cell ds-c-miss\" href=\"#\" aria-label=\"q03: regressed\"></a><a class=\"ds-cell\" href=\"#\" aria-label=\"q04: pass\"></a><a class=\"ds-cell ds-c-fixed\" href=\"#\" aria-label=\"q05: fixed\"></a><a class=\"ds-cell ds-c-error\" href=\"#\" aria-label=\"q06: errored\"></a><a class=\"ds-cell\" href=\"#\" aria-label=\"q07: pass\"></a><a class=\"ds-cell ds-c-miss\" href=\"#\" aria-label=\"q08: regressed\"></a></div><figcaption class=\"ds-legend\"><span><i class=\"ds-key ds-c-miss\"></i>2 regressed</span><span><i class=\"ds-key ds-c-fixed\"></i>1 fixed</span><span><i class=\"ds-key ds-c-error\"></i>1 errored</span></figcaption></figure>",
+      "css": ".ds-casestrip { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-variant-numeric: tabular-nums; margin: 0; padding: 10px 13px; background: var(--surface); } .ds-cells { display: flex; flex-wrap: wrap; gap: 2px; } .ds-cell { display: block; width: 6.5px; height: 13px; border-radius: 1px; background: var(--rule-strong); transition: transform 150ms; } .ds-cell:hover { transform: scaleY(1.25); } .ds-cell:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; } .ds-c-miss { background: var(--worse-mark); } .ds-c-fixed { background: var(--better-mark); } .ds-c-error { color: var(--worse-mark); background-color: var(--worse-wash); background-image: repeating-linear-gradient(135deg, currentColor 0 1.5px, transparent 1.5px 4px); } .ds-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; font-size: 12px; color: var(--ink-2); } .ds-legend span { display: inline-flex; align-items: center; gap: 6px; } .ds-key { display: inline-block; width: 6.5px; height: 9.75px; border-radius: 1px; }"
+    },
+    {
+      "name": "Section",
+      "kind": "card",
+      "refersTo": "section",
+      "description": "The page building block: a hairline-bordered surface with a title bar and right-aligned actions.",
+      "html": "<section class=\"ds-section\"><header class=\"ds-section-head\"><h2>Metrics</h2><span class=\"ds-hint\"><kbd>J</kbd> <kbd>K</kbd> move</span></header><table class=\"ds-table\"><thead><tr><th>Metric</th><th class=\"num\">Baseline</th><th class=\"num\">Candidate</th></tr></thead><tbody><tr class=\"is-active\"><td>hit@5</td><td class=\"num\">0.812</td><td class=\"num\">0.750</td></tr><tr><td>mrr</td><td class=\"num\">0.644</td><td class=\"num\">0.661</td></tr></tbody></table></section>",
+      "css": ".ds-section { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-variant-numeric: tabular-nums; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 3.25px; } .ds-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 29px; padding: 5px 10px; border-bottom: 1px solid var(--rule); } .ds-section-head h2 { margin: 0; font-size: 13px; font-weight: 600; } .ds-hint { font-size: 12px; color: var(--ink-2); } .ds-hint kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 11px; padding: 0 3px; color: var(--ink-2); background: var(--raised); border: 1px solid var(--rule-strong); border-radius: 3.25px; } .ds-table { width: 100%; border-collapse: collapse; text-align: left; } .ds-table th { font-size: 12px; font-weight: 500; color: var(--ink-2); padding: 5px 6.5px; } .ds-table td { padding: 5px 6.5px; border-top: 1px solid var(--rule); } .ds-table th:first-child, .ds-table td:first-child { padding-left: 10px; } .ds-table .num { text-align: right; } .ds-table tbody tr:hover { background: var(--hover); } .ds-table tr.is-active, .ds-table tr.is-active:hover { background: var(--select); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Instrument Readout",
+    "overview": "The Viewer reads like a calibrated instrument, not a dashboard. Every number sits next to the evidence that qualifies it: an interval, a p-value, a case count, the worth of one case. Doubt is drawn as well as written; a difference that is not significant is hollow or hatched grey and never borrows the colour of a win or a loss. The page is quiet so that the few marks that carry colour can be read at a glance.\n\nIt is a dense operator console built from standard web controls: system type at a 13px base, tabular figures, 1px hairlines, gently squared corners, and tables that fill the width. Cool slate neutrals do the structural work in both themes. Colour is spent only on status, and every status also carries an icon and a word, so the screen survives colour blindness, greyscale printing and a dark room.\n\nThe same build serves the live Viewer and a single exported HTML file opened from disk, so everything the eye sees ships inside one CSS and one JS file: no web fonts, no images, no network assets.",
+    "keyCharacteristics": [
+      "Dense tables at 13px with tabular, right-aligned figures; ids, hashes and times in monospace.",
+      "Colour is status only: the Okabe-Ito orange (worse) and blue (better) pair, grey for not significant.",
+      "Two signature marks: the interval strip and the case strip.",
+      "Flat surfaces separated by hairlines; shadow only on overlays.",
+      "Light and dark themes from one token set, toggled system / light / dark.",
+      "Keyboard first: J/K lists, single-key triage, visible key hints."
+    ],
+    "rules": [
+      {
+        "name": "The Status-Only Rule",
+        "body": "Colour means worse, better, not significant or warning, and nothing else. Navigation, selection, focus, headings and links stay in the slate neutrals.",
+        "section": "colors"
+      },
+      {
+        "name": "The Mark-Not-Number Rule",
+        "body": "The data colour sits on the mark (icon, band, point, cell), never on the metric value, the delta or the verdict word, which stay in ink. The `*-text` tones are reserved for failure and warning messages and counts of failures.",
+        "section": "colors"
+      },
+      {
+        "name": "The Icon-And-Word Rule",
+        "body": "Every status is told by an icon and a word (or an accessible name when compact), never by colour alone. Errored and never-generated cases also carry a 135-degree hatch texture.",
+        "section": "colors"
+      },
+      {
+        "name": "The Slate-Selection Rule",
+        "body": "Selection and focus are slate, never the \"better\" blue, so a selected row can never be misread as an improvement.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "The body sets `font-variant-numeric: tabular-nums`; numeric columns are right-aligned so digits line up across rows.",
+        "section": "typography"
+      },
+      {
+        "name": "The No-Web-Font Rule",
+        "body": "Only system stacks: the exported Viewer must render from one self-contained file with no network.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sticky-First-Column Rule",
+        "body": "A wide table keeps its identifying first column sticky (Runs, Compare, cases) and its scroll container fades the right edge to the surface whenever more columns sit off-screen.",
+        "section": "layout"
+      },
+      {
+        "name": "The Overlay-Only Shadow Rule",
+        "body": "A shadow means \"this floats\". Sections, tables, cards and buttons never cast one.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do pair every status with an icon and a word, and give errored or never-generated items the hatch texture.",
+      "Do draw doubt: hollow points and hatched grey bands for non-significant results, on the shared zero-centred scale.",
+      "Do keep metric values, deltas and verdict words in ink or ink-2, right-aligned with tabular figures.",
+      "Do use the slate `select` and `focus` tokens for selection, active rows and the focus ring.",
+      "Do fold run status into the run marks and show it only when a run is not complete.",
+      "Do make a wide table's first column sticky and fade its right edge while more columns sit off-screen.",
+      "Do define every new colour for both themes and check worse / better against each other for colour-vision deficiency."
+    ],
+    "donts": [
+      "Don't colour a number, a heading, a link or a selected row with the worse / better hues.",
+      "Don't use red and green for regressed and improved.",
+      "Don't load a web font, image or any network asset; the exported file must stand alone.",
+      "Don't put a shadow on a section, table or button; shadows are for the dialog and tooltips.",
+      "Don't make a non-significant result look like a win or a loss: no filled band, no status colour.",
+      "Don't add a status column to run tables."
+    ]
+  }
+}

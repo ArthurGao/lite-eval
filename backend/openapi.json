@@ -253,6 +253,21 @@
             "title": "Case Id",
             "type": "string"
           },
+          "direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "worse",
+                  "better"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
           "kind": {
             "enum": [
               "regressed",
@@ -332,6 +347,36 @@
           "content": {
             "$ref": "#/components/schemas/CaseContent"
           },
+          "dataset": {
+            "title": "Dataset",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "miss": {
+            "title": "Miss",
+            "type": "boolean"
+          },
+          "next_case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Case Id"
+          },
           "older_annotations": {
             "items": {
               "$ref": "#/components/schemas/Annotation"
@@ -352,6 +397,17 @@
             },
             "title": "Outputs",
             "type": "array"
+          },
+          "prev_case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prev Case Id"
           },
           "run_id": {
             "title": "Run Id",
@@ -374,6 +430,11 @@
           "run_id",
           "case_id",
           "case_hash",
+          "dataset",
+          "miss",
+          "error",
+          "prev_case_id",
+          "next_case_id",
           "content",
           "outputs",
           "scores",
@@ -506,8 +567,18 @@
             "title": "Added Cases",
             "type": "array"
           },
+          "baseline_config": {
+            "default": "",
+            "title": "Baseline Config",
+            "type": "string"
+          },
           "baseline_run": {
             "title": "Baseline Run",
+            "type": "string"
+          },
+          "candidate_config": {
+            "default": "",
+            "title": "Candidate Config",
             "type": "string"
           },
           "candidate_run": {
@@ -869,6 +940,89 @@
           "message"
         ],
         "title": "ErrorInfo",
+        "type": "object"
+      },
+      "ExportPayload": {
+        "additionalProperties": false,
+        "description": "What `lite-eval report --html` embeds in #lite-eval-data (design \u00a718.22). In the OpenAPI\nspec as a component, so the frontend's type is generated, not written by hand.",
+        "properties": {
+          "comparison": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Comparison"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "run",
+              "compare"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "lite_eval_version": {
+            "title": "Lite Eval Version",
+            "type": "string"
+          },
+          "runs": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ExportedRun"
+            },
+            "title": "Runs",
+            "type": "object"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "generated_at",
+          "lite_eval_version",
+          "start",
+          "runs",
+          "comparison"
+        ],
+        "title": "ExportPayload",
+        "type": "object"
+      },
+      "ExportedRun": {
+        "additionalProperties": false,
+        "properties": {
+          "cases": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CaseDetail"
+            },
+            "title": "Cases",
+            "type": "object"
+          },
+          "detail": {
+            "$ref": "#/components/schemas/RunDetail"
+          },
+          "row": {
+            "$ref": "#/components/schemas/RunRow"
+          },
+          "rows": {
+            "$ref": "#/components/schemas/CasePage"
+          }
+        },
+        "required": [
+          "row",
+          "detail",
+          "rows",
+          "cases"
+        ],
+        "title": "ExportedRun",
         "type": "object"
       },
       "GateRule": {
@@ -2234,9 +2388,26 @@
             "title": "Started At",
             "type": "string"
           },
+          "status": {
+            "enum": [
+              "complete",
+              "partial",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "synthetic": {
+            "title": "Synthetic",
+            "type": "boolean"
+          },
           "value": {
             "title": "Value",
             "type": "number"
+          },
+          "warnings": {
+            "title": "Warnings",
+            "type": "integer"
           }
         },
         "required": [
@@ -2247,7 +2418,10 @@
           "value",
           "dataset_version",
           "dataset_hash",
-          "baseline"
+          "baseline",
+          "status",
+          "warnings",
+          "synthetic"
         ],
         "title": "TrendPoint",
         "type": "object"
@@ -2329,7 +2503,7 @@
   "paths": {
     "/api/annotations": {
       "get": {
-        "operationId": "list_annotations_api_annotations_get",
+        "operationId": "list_annotations",
         "parameters": [
           {
             "in": "query",
@@ -2372,7 +2546,7 @@
                   "items": {
                     "$ref": "#/components/schemas/Annotation"
                   },
-                  "title": "Response List Annotations Api Annotations Get",
+                  "title": "Response List Annotations",
                   "type": "array"
                 }
               }
@@ -2393,7 +2567,7 @@
         "summary": "List Annotations"
       },
       "post": {
-        "operationId": "create_annotation_api_annotations_post",
+        "operationId": "create_annotation",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2431,7 +2605,7 @@
     },
     "/api/compare": {
       "get": {
-        "operationId": "compare_runs_api_compare_get",
+        "operationId": "compare_runs",
         "parameters": [
           {
             "in": "query",
@@ -2479,7 +2653,7 @@
     },
     "/api/datasets": {
       "get": {
-        "operationId": "list_datasets_api_datasets_get",
+        "operationId": "list_datasets",
         "responses": {
           "200": {
             "content": {
@@ -2488,7 +2662,7 @@
                   "items": {
                     "$ref": "#/components/schemas/DatasetSummary"
                   },
-                  "title": "Response List Datasets Api Datasets Get",
+                  "title": "Response List Datasets",
                   "type": "array"
                 }
               }
@@ -2501,7 +2675,7 @@
     },
     "/api/datasets/{name}/cases": {
       "get": {
-        "operationId": "list_dataset_cases_api_datasets__name__cases_get",
+        "operationId": "list_dataset_cases",
         "parameters": [
           {
             "in": "path",
@@ -2563,7 +2737,7 @@
     },
     "/api/health": {
       "get": {
-        "operationId": "health_api_health_get",
+        "operationId": "health",
         "responses": {
           "200": {
             "content": {
@@ -2581,7 +2755,7 @@
     },
     "/api/runs": {
       "get": {
-        "operationId": "list_runs_api_runs_get",
+        "operationId": "list_runs",
         "parameters": [
           {
             "in": "query",
@@ -2751,7 +2925,7 @@
     },
     "/api/runs/{suite}/{run_id}": {
       "get": {
-        "operationId": "get_run_api_runs__suite___run_id__get",
+        "operationId": "get_run",
         "parameters": [
           {
             "in": "path",
@@ -2799,7 +2973,7 @@
     },
     "/api/runs/{suite}/{run_id}/cases": {
       "get": {
-        "operationId": "list_cases_api_runs__suite___run_id__cases_get",
+        "operationId": "list_cases",
         "parameters": [
           {
             "in": "path",
@@ -2846,7 +3020,7 @@
             "required": false,
             "schema": {
               "default": 100,
-              "maximum": 1000,
+              "maximum": 100000,
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
@@ -2880,7 +3054,7 @@
     },
     "/api/runs/{suite}/{run_id}/cases/{case_id}": {
       "get": {
-        "operationId": "get_case_api_runs__suite___run_id__cases__case_id__get",
+        "operationId": "get_case",
         "parameters": [
           {
             "in": "path",
@@ -2937,7 +3111,7 @@
     },
     "/api/trends": {
       "get": {
-        "operationId": "trend_api_trends_get",
+        "operationId": "trend",
         "parameters": [
           {
             "in": "query",

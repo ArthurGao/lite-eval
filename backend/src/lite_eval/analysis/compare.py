@@ -147,7 +147,16 @@ def _case_changes(
     for cid, x, y in zip(ids, xs, ys, strict=True):
         if x != y:
             kind: CaseChangeKind = ("regressed" if y < x else "fixed") if pass_fail else "changed"
-            out.append(CaseChange(case_id=cid, metric=metric, kind=kind, baseline=x, candidate=y))
+            out.append(
+                CaseChange(
+                    case_id=cid,
+                    metric=metric,
+                    kind=kind,
+                    baseline=x,
+                    candidate=y,
+                    direction="worse" if y < x else "better",
+                )
+            )
     return out
 
 
@@ -243,6 +252,8 @@ def compare(
     return Comparison(
         baseline_run=a.run_id,
         candidate_run=b.run_id,
+        baseline_config=str(a.target.config.get("name", "")),
+        candidate_config=str(b.target.config.get("name", "")),
         dataset=a.dataset.name,
         overlap=overlap,
         changed_cases=changed,

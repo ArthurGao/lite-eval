@@ -3,6 +3,7 @@ name: ci
 on:
   push:
     branches: [main]
+    tags: ["v*"]   # a release: the package job's wheel and sdist go to the GitHub Release (design §17)
   pull_request:
 
 permissions:
@@ -62,3 +63,69 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
+      # e2e: Playwright against the built Viewer, served by the backend over fixture runs of the
+      # fake target (backend tests/e2e/viewer_fixture.py); no model, no network.
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2   # v10.3.3
+        with:
+          version: "0.10.8"
+          enable-cache: true
+      - run: uv sync --locked --extra server   # the fixture Viewer needs only the server extra
+        working-directory: backend
+      - id: playwright
+        run: echo "version=$(jq -r '.devDependencies["@playwright/test"]' package.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright test   # `pnpm build` above made dist/; `pnpm e2e` would build again
+
+  # Design §18.14: the wheel carries the built Viewer; installed in a clean venv, `view --check`
+  # must serve / and /api/health. On a v* tag the release job publishes what this job built.
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115   # v6
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1   # v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2   # v10.3.3
+        with:
+          version: "0.10.8"
+      - run: python3 scripts/build_frontend.py
+        working-directory: backend
+      - run: uv build --out-dir ../dist
+        working-directory: backend
+      - name: the wheel and the sdist carry the Viewer (design §18.14; both are published)
+        run: |
+          unzip -l dist/*.whl | grep -q 'lite_eval/server/static/index.html'
+          tar -tzf dist/*.tar.gz | grep -q 'src/lite_eval/server/static/index.html'
+      - name: view --check from a clean venv
+        run: |
+          uv venv --python 3.12 /tmp/clean
+          uv pip install --python /tmp/clean "$(ls dist/*.whl)[server]"
+          cd /tmp && /tmp/clean/bin/lite-eval view --check
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        with:
+          name: dist
+          path: dist/
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [backend, lowest, frontend, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # this job only: create the release
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333   # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

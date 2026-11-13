@@ -205,6 +205,8 @@ def test_a_run_export_is_one_self_contained_file(tmp_path: Path) -> None:
     assert SECRET not in html
     assert exported["cases"]["q1"]["outputs"][0]["value"] == "key «redacted:api_keys»"
     assert [r["case_id"] for r in exported["rows"]["items"]] == ["q0", "q1", "q2"]
+    assert (exported["row"]["run_id"], exported["row"]["config"]) == (result.record.run_id, "a")
+    assert data["start"] == f"/runs/{result.record.suite.name}/{result.record.run_id}"
 
 
 def test_an_export_adds_rules_but_never_removes_them(tmp_path: Path) -> None:
@@ -252,6 +254,9 @@ def test_a_comparison_export_uses_both_runs_rules(tmp_path: Path) -> None:
     )
     runs = data["runs"]
     assert isinstance(runs, dict) and len(runs) == 2
+    assert data["start"] == (
+        f"/compare?baseline=demo-suite/{a.record.run_id}&candidate=demo-suite/{b.record.run_id}"
+    )
 
 
 def test_an_export_without_a_frontend_build_is_a_config_error(tmp_path: Path) -> None:

@@ -235,3 +235,18 @@ def test_cases_a_partial_run_never_generated_are_misses_scoring_zero(root: Path)
     ]
     mean = sum(r.scores["exact_match"] for r in rows) / len(rows)
     assert mean == result.record.summary.metrics["exact_match"].value == 0.5
+
+
+def test_a_case_knows_its_neighbours_dataset_and_outcome(
+    root: Path, runs: tuple[RunResult, RunResult]
+) -> None:
+    """The case page needs no case list: prev / next come with the case (no 1000-row fetch)."""
+    a, _ = runs
+    first = case_detail(root, *ids(a), "q0", FileCatalog(root))
+    middle = case_detail(root, *ids(a), "q1", FileCatalog(root))
+    last = case_detail(root, *ids(a), "q3", FileCatalog(root))
+    assert (first.prev_case_id, first.next_case_id) == (None, "q1")
+    assert (middle.prev_case_id, middle.next_case_id) == ("q0", "q2")
+    assert (last.prev_case_id, last.next_case_id) == ("q2", None)
+    assert (middle.dataset, middle.miss, middle.error) == ("demo", True, None)
+    assert first.miss is False

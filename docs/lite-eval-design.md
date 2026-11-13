@@ -814,6 +814,45 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
       - `report A..B` 改成两个参数：§11.2 定的公开语法，留给 owner 决定；
       - 查询参数模型、SQL 分页、后台刷新线程、数据集摘要缓存：在几百个运行的规模下收益很小。
   - Codex：1 条成立，已修（先红后绿）：对比导出把两个运行都放在第一个运行的评测根目录里找；现在各自从自己的目录加载。其余方面（安全、加锁、索引、转义、脱敏、逐用例口径）没有发现问题。
+- **E3b Viewer 前端、e2e、打包（2026-11-14）**：E3 完成，**v1（E0–E3）完成**。
+  - 做了什么（细节见 §18.22）：
+    - 七个页面：Runs、运行详情、用例详情、对比、miss 归类、数据集、趋势；
+    - 数据都经过 `src/data/source.ts`（实时 API 和导出页两种数据源）；
+    - Playwright e2e 跑在 fake target 生成的夹具上，端口 8722；
+    - `scripts/build_frontend.py`；CI 新增 `package` 任务（干净 venv 里装 wheel 后跑 `view --check`）和 `release` 任务（打 `v*` tag 时发布）。
+  - 视觉：
+    - 方向 dense-data 由任务指定。owner 回答了两轮访谈，写成 `PRODUCT.md`；
+    - 方向说明写在 `.impeccable/surfaces/frontend-src.md`；`DESIGN.md` 和 `.impeccable/design.json` 由 Impeccable 的 documenter 从构建出来的界面整理；
+    - 状态色用 dataviz 的校验脚本验证过两种主题；标志性设计是区间条和用例条码。
+  - Impeccable 完成审查：三轮。
+    - 第一轮 8 组问题，前两轮之后全部解决：区间条的斜线纹理和空心点、手机宽度下结论和差值并排、趋势图的整数刻度、固定首列和滚动渐隐、用例页和归类页的信息、运行详情的版式；
+    - 修复中引入的一个回归（手机宽度下页面多出 20px）也已解决；
+    - 剩一条等 owner 决定：方向说明里没有 seed，因为方向由任务指定、没有抽方向。审查规则要求 owner 明确认可这条。
+  - 验证：
+    - 后端 pytest 328 passed（锁定版本、`CI=true`、最低声明版本三种环境）；
+    - 前端：单元测试 14 条、e2e 8 条（验收流程、离线导出、主题）；
+    - 改坏脚本：前端 20/20 变红（单元 + e2e），后端这轮新增测试 7/7 变红；
+    - 在干净的 venv 里装 wheel 后，`view --check` 返回两个 200；用 lite-rag 的真实数据截了 bootstrap 区间的图。
+  - /simplify（四个审查），采纳：
+    - bug：
+      - 用例超过 1000 条时静默截断：上限提到 100000，用例详情带上一个 / 下一个；
+      - 导出页的筛选只认一半：导出页不再提供筛选；
+      - 变化方向由浏览器推断：改为 `CaseChange.direction`；
+    - 导出数据改为 pydantic 模型并写进 OpenAPI，起始路由由后端给出；
+    - 保存 annotation 后只让相关查询失效；运行相关的查询永不过期；用例条码做 memo；
+    - 共用 `useShortcuts`、`rowProps`、`queries.ts`、`Select` / `KeyHints` / `WarningsList` / `RunLink` / `ContentNote`；
+    - `light-dark()` 让颜色变量只写一份；"pass"格子提到 3:1；
+    - CI 的 e2e 不重复构建，只装 `[server]` extra，缓存 uv 和 Playwright 的浏览器。
+  - /simplify 不采纳：
+    - 把 e2e 的期望写进夹具生成的清单：夹具一变 e2e 就会大声失败，收益低；
+    - 把用例条码移出用例表、做 `Th` / `Td` 表格组件：收益小；
+    - 给趋势页做专门的选项接口：当前规模下 memo 就够了。
+  - Codex：
+    - 采纳 3 条，都先写了失败的测试：
+      - 趋势表的行缺少运行标记：`TrendPoint` 加 `status`、`warnings`、`synthetic`；
+      - 很小的数显示成 0（一个用例的权重、显著但很小的差值）：三位小数会舍成 0 时改用两位有效数字；
+      - CI 没检查 sdist 带不带前端。
+    - 不采纳 1 条："焦点在勾选框上时按 X 会切换那一行"。勾选框是 `input`，键盘守卫会忽略它，补了 `format.test.ts` 钉住这个行为。焦点在链接上时 J/K 仍然移动列表是有意为之。
 
 ## 17. 已定的开工问题（2026-11-13）
 
@@ -1226,6 +1265,21 @@ runner 开始时会把要执行的命令或 URL 打印出来。
 - **`lite-eval report --html`**：
   - 参数是一个运行目录，或者 `<baseline 目录>..<candidate 目录>`（在两边都是目录的那个 `..` 处拆开，所以 `../runs/x` 这样的相对路径照样能用）。
   - 页面就是 Viewer 自己的构建：CSS 内联成 `<style>`；唯一的 JS 文件变成 `data:` URL 的 module script，所以 JS 里出现 `</script>` 也不会结束标签；数据按 §18.12 转义后放进 `#lite-eval-data`。
-  - 数据格式：`{kind: run | compare, runs: {"<suite>/<run_id>": {detail, rows, cases: {case_id: CaseDetail}}}, comparison}`。用例详情里的"其他运行"只在导出的运行之间找。
+  - 数据格式是 `views.ExportPayload`（pydantic 模型）：`{kind: run | compare, generated_at, lite_eval_version, start, runs: {"<suite>/<run_id>": {row, detail, rows, cases: {case_id: CaseDetail}}}, comparison}`。`start` 是页面打开时所在的路由（单个运行打开在它的运行页，对比打开在对比页）。这个模型作为组件写进 OpenAPI 规范（`server/app.py` 里的 `openapi()`），前端的类型由它生成，不手写。用例详情里的"其他运行"只在导出的运行之间找。
   - 脱敏按类型进行，和 Viewer 是同一套代码：输出、分数、警告、target 的 config 和 info 用导出运行的规则并集加 `--redact`；id、哈希和数据集内容不改（§18.12：数据集不脱敏，加载时扫描）。所以对比导出里，一个运行的文本也要满足另一个运行的规则。
+- **前端（E3b 定）**：
+  - 路由用 hash history：Viewer 和从磁盘打开的导出文件共用一套路由，服务端不需要把任意路径改写回 `index.html`。
+  - 不做代码分割（rolldown 1.2.19 的 `output.codeSplitting: false`），构建结果只有一个 JS 和一个 CSS；只用系统字体，不打包字体文件。这样导出才能是单个文件。
+  - 数据只经过 `src/data/source.ts`：`liveSource` 走生成的 client，`embeddedSource` 读 `#lite-eval-data`。导出页面只读：不能写 annotation，也没有数据集页和趋势页。导出的对比打开时直接落在对比页。
+  - 后端 operationId 取路由函数名（`generate_unique_id_function`），生成的 client 函数名是 `listRuns()`、`getCase()` 这样。
+  - 视觉方向：dense-data（`PRODUCT.md`、`.impeccable/surfaces/frontend-src.md`）。只用状态色：变差为橙色、变好为蓝色（Okabe–Ito 配色，两个主题都用 dataviz 的校验脚本验证过），每种状态同时带图标和文字；不显著的差值是中性灰。
+  - 标志性设计：区间条（所有差值共用一个以零为中心的刻度；跨过零的区间画成中性灰）和用例条码（每个用例一格，出错和没生成的格子加斜线纹理，点一格打开对应用例）。
+  - 键盘：列表 J/K 移动、Enter 打开、X 勾选对比；用例页 [ ] 切换上一个 / 下一个用例、T 归类；对话框里 R/L/E/U 选类别、Cmd/Ctrl+Enter 保存。
+  - e2e：`backend/tests/e2e/viewer_fixture.py` 用 fake target 跑出真实的运行记录，生成两种导出，在端口 8722 上启动 Viewer；Playwright 覆盖 §16 E3 的验收流程。
+- **打包（E3b 定）**：CI 的 `package` 任务按 §18.14 构建前端 → `uv build` → 检查 wheel 里有 `server/static/index.html` → 在干净的 venv 里装 `wheel[server]` → `view --check`。打 `v*` tag 时，`release` 任务（唯一有 `contents: write` 权限的任务）用 `gh release create` 把 wheel 和 sdist 发布出去。
+- **E3b 的 /simplify 带来的 API 补充**（都只加字段）：
+  - `CaseDetail` 带 `dataset`、`miss`、`error` 以及 `prev_case_id` / `next_case_id`（按运行里用例的顺序），用例页只发一个请求，不需要整份用例列表；
+  - `CaseChange.direction`（worse / better）和 `Comparison.baseline_config` / `candidate_config`。哪边算变差由后端给出，浏览器只负责显示，不做判断（前端规则 2）；
+  - 用例列表的 `limit` 上限是 100000，不再静默截在 1000 条；
+  - 前端所有查询的 key 和参数集中在 `src/data/queries.ts`。运行记录不可变，所以和运行相关的查询永不过期；只有 annotation 会让 `case`、`cases`、`dataset-cases` 这三类查询失效。
 

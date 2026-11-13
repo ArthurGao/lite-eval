@@ -83,6 +83,11 @@ class CaseDetail(_Model):
     run_id: str
     case_id: str
     case_hash: str
+    dataset: str
+    miss: bool
+    error: str | None
+    prev_case_id: str | None  # neighbours in the run's case order: the page needs no case list
+    next_case_id: str | None
     content: CaseContent
     outputs: list[Output]
     scores: list[Score]
@@ -115,6 +120,25 @@ class DatasetCasePage(_Model):
     total: int
     offset: int
     limit: int
+
+
+class ExportedRun(_Model):
+    row: RunRow  # the exported Runs list
+    detail: RunDetail
+    rows: CasePage  # every case
+    cases: dict[str, CaseDetail]
+
+
+class ExportPayload(_Model):
+    """What `lite-eval report --html` embeds in #lite-eval-data (design §18.22). In the OpenAPI
+    spec as a component, so the frontend's type is generated, not written by hand."""
+
+    kind: Literal["run", "compare"]
+    generated_at: datetime
+    lite_eval_version: str
+    start: str  # the route the page opens on
+    runs: dict[str, ExportedRun]  # "<suite>/<run_id>" -> the run
+    comparison: Comparison | None
 
 
 def window[T](items: Sequence[T], offset: int, limit: int | None) -> tuple[list[T], int, int]:
@@ -253,11 +277,19 @@ def detail(
         raise NotFound(f"run {record.suite.name}/{record.run_id} has no case {case_id!r}")
     case_hash = record.case_hashes.get(case_id, "")
     dataset = record.dataset.name
+    order = list(view.results)
+    at = order.index(case_id)
+    result = view.results[case_id]
     return CaseDetail(
         suite=record.suite.name,
         run_id=record.run_id,
         case_id=case_id,
         case_hash=case_hash,
+        dataset=dataset,
+        miss=result.miss,
+        error=result.error,
+        prev_case_id=order[at - 1] if at > 0 else None,
+        next_case_id=order[at + 1] if at + 1 < len(order) else None,
         content=_content(view.cases.get(case_id), case_hash),
         outputs=[view.redactor.output(o) for o in view.stored.outputs if o.case_id == case_id],
         scores=[view.redactor.score(s) for s in view.stored.scores if s.case_id == case_id],

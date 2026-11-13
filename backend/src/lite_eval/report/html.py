@@ -28,6 +28,8 @@ from lite_eval.server.paths import NO_FRONTEND
 from lite_eval.store import load_run, read_record, root_of
 from lite_eval.views import (
     CasePage,
+    ExportedRun,
+    ExportPayload,
     Notes,
     compare_loaded,
     detail,
@@ -54,41 +56,39 @@ def embed_json(data: Any) -> str:
     return re.sub("[<>&\u2028\u2029]", lambda m: _ESCAPES[m.group()], text)
 
 
-def _payload(directories: Sequence[Path], extra_rules: Sequence[str]) -> dict[str, Any]:
+def _payload(directories: Sequence[Path], extra_rules: Sequence[str]) -> ExportPayload:
     """Each run loaded once; every case built from that load, with the union of the runs'
     rules plus `extra_rules`."""
     records = [read_record(d) for d in directories]
     redactor = union(records, extra_rules)
-    exported = [
-        (root_of(d), r.suite.name, r.run_id) for d, r in zip(directories, records, strict=True)
-    ]
     candidates = [run_row(r) for r in records]  # a case's other runs: only the exported ones
-    runs: dict[str, Any] = {}
-    for root, suite, run_id in exported:
+    runs: dict[str, ExportedRun] = {}
+    for directory, record in zip(directories, records, strict=True):
+        root, suite, run_id = root_of(directory), record.suite.name, record.run_id
         view = open_run(root, suite, run_id, redactor)
         notes = Notes.load(root)
         case_rows = rows(view, notes)
-        runs[f"{suite}/{run_id}"] = {
-            "detail": run_detail(root, suite, run_id, redactor).model_dump(mode="json"),
-            "rows": CasePage(
-                items=case_rows, total=len(case_rows), offset=0, limit=len(case_rows)
-            ).model_dump(mode="json"),
-            "cases": {
-                r.case_id: detail(view, r.case_id, notes, candidates).model_dump(mode="json")
-                for r in case_rows
-            },
-        }
+        runs[f"{suite}/{run_id}"] = ExportedRun(
+            row=run_row(record),
+            detail=run_detail(root, suite, run_id, redactor),
+            rows=CasePage(items=case_rows, total=len(case_rows), offset=0, limit=len(case_rows)),
+            cases={r.case_id: detail(view, r.case_id, notes, candidates) for r in case_rows},
+        )
+    refs = list(runs)
     compared = None
+    start = f"/runs/{refs[0]}"
     if len(directories) == 2:
         a, b = (load_run(d, outputs=False) for d in directories)  # each from its own root
-        compared = compare_loaded(a, b, redactor).model_dump(mode="json")
-    return {
-        "kind": "compare" if compared else "run",
-        "generated_at": datetime.now(UTC).isoformat(),
-        "lite_eval_version": __version__,
-        "runs": runs,
-        "comparison": compared,
-    }
+        compared = compare_loaded(a, b, redactor)
+        start = f"/compare?baseline={refs[0]}&candidate={refs[1]}"
+    return ExportPayload(
+        kind="compare" if compared else "run",
+        generated_at=datetime.now(UTC),
+        lite_eval_version=__version__,
+        start=start,
+        runs=runs,
+        comparison=compared,
+    )
 
 
 def render(static_dir: Path, directories: Sequence[Path], extra_rules: Sequence[str] = ()) -> str:
@@ -96,7 +96,7 @@ def render(static_dir: Path, directories: Sequence[Path], extra_rules: Sequence[
     index = static_dir / "index.html"
     if not index.is_file():
         raise ConfigError(f"nothing to export: {NO_FRONTEND}")
-    data = _payload(directories, extra_rules)
+    data = _payload(directories, extra_rules).model_dump(mode="json")
     html = index.read_text(encoding="utf-8")
 
     def script(match: re.Match[str]) -> str:

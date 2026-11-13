@@ -37,7 +37,8 @@ If a change must contradict the design, update the design in the same change and
 
 ## Current stage
 
-**E3a done (2026-11-14: Viewer backend, API, annotations, export); next E3b** (frontend, e2e, packaging; design §16). v1 = E0–E3.
+**E3 done (2026-11-14): v1 (E0–E3) complete.** Next: E4 (memory pack, HTTP / subprocess targets, lite-mem and
+llm-steward migrations; design §16).
 
 ## Rules
 

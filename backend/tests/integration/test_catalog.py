@@ -175,3 +175,9 @@ def test_an_index_of_another_schema_version_is_rebuilt(tmp_path: Path) -> None:
         (version,) = db.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
     db.close()
     assert version == str(IndexCatalog.SCHEMA_VERSION)
+
+
+def test_trend_points_carry_every_doubt_a_run_has(catalog: RunCatalog) -> None:
+    """Rule 3: a page that lists runs marks partial, warnings and synthetic data (Trends too)."""
+    points = catalog.trend("demo-suite", "exact_match").points
+    assert [(p.status, p.warnings, p.synthetic) for p in points] == [("complete", 0, False)] * 3

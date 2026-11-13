@@ -90,6 +90,10 @@ class TrendPoint(_Model):
     dataset_version: str
     dataset_hash: str
     baseline: bool
+    # every doubt the run carries, so a trend's table marks it like the Runs list (rule 3)
+    status: RunStatus
+    warnings: int
+    synthetic: bool
 
 
 class DatasetChange(_Model):
@@ -195,6 +199,9 @@ class _Catalog:
                 dataset_version=r.dataset_version,
                 dataset_hash=r.dataset_hash,
                 baseline=r.baseline,
+                status=r.status,
+                warnings=r.warnings,
+                synthetic=r.synthetic,
             )
             for r in rows
             if metric in r.metrics
