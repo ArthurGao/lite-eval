@@ -907,8 +907,8 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
     - 每写一个语料文件都 `mkdir(exist_ok=True)`：开销可以忽略；
     - 把 LongMemEval 的拒答计数改成单独的统计对象：调用处写明顺序就够了。
   - /simplify 提出、留给 owner 定：
-    - **语料要不要做密钥扫描**：从 E1 起只扫 `cases.jsonl`，`corpus/` 从来不扫（LoCoMo 的对话、lite-rag 的文档也一样）。LongMemEval 的历史挪进语料以后也不扫了。E4b 起初把这一点写成了好处，已改成如实说明（§18.23）。
-    - **通用的"已知值"脱敏**：HTTP Target 只认几种编码（原样、JSON 转义、`quote`、`quote_plus`），子进程 Target 的 stderr 不按值遮盖 `env_allow` 放行的变量。更深的做法是 `Redactor` 加一条"已知值"规则：Target 声明它解析出的密钥，runner 在已经统一脱敏的地方（输出、产物）一起遮盖。Codex 提的百分号编码大小写变体也归到这里。
+    - **语料要不要做密钥扫描**：从 E1 起只扫 `cases.jsonl`，`corpus/` 从来不扫（LoCoMo 的对话、lite-rag 的文档也一样）。LongMemEval 的历史挪进语料以后也不扫了。E4b 起初把这一点写成了好处，已改成如实说明（§18.23）。定了：不扫，理由写进 §18.12。
+    - **通用的"已知值"脱敏**：HTTP Target 只认几种编码（原样、JSON 转义、`quote`、`quote_plus`），子进程 Target 的 stderr 不按值遮盖 `env_allow` 放行的变量。更深的做法是 `Redactor` 加一条"已知值"规则：Target 声明它解析出的密钥，runner 在已经统一脱敏的地方（输出、产物）一起遮盖。Codex 提的百分号编码大小写变体也归到这里。定了：E4c 之后单独做一个小阶段（改 runner，要先走计划模式）。
   - Codex：
     - 采纳 1 条（先写失败的测试）：`--limit` 时拒答计数的说明。
     - 不采纳 1 条："`[1 .2]` 在缓冲区边界处把 `1` 当成完整的数"：`1` 本来就是完整的 JSON 数，后面的 `.2` 报"第 1 项之后"是对的。
@@ -1117,6 +1117,7 @@ runner 开始时会把要执行的命令或 URL 打印出来。
 - **数据集不脱敏**：数据集本来就不该有敏感内容（R20）。加载时会扫描一遍，发现疑似密钥就报错。
   - 误报按匹配项逐条豁免：`dataset.yaml` 里写 `secret_scan_allow: [{case_id, rule, match_sha256, reason}]`，`match_sha256` 是命中文本的 sha256，`reason` 必填。没有整个数据集一次豁免的写法。
   - 用到的豁免写进 `run.json` 的 `warnings`；列了却没命中的豁免也给出警告，提醒删掉。
+  - **只扫 `cases.jsonl`，不扫 `corpus/`**（E4b 写明，owner 2026-11-14 交给我定）：语料是 Target 读的材料，不进运行记录；离开 Target 的输出、trace、错误和产物都按 suite 的脱敏规则处理。公开基准的语料（LongMemEval 里的 ShareGPT 聊天记录）会有误报，又改不了原文，逐条豁免没有意义。自己写的语料照样不该含密钥（R20），这条靠写数据的人，不靠扫描。
 - **测试**：每种形式至少一个测试用例，并写明哪些部分应该保持可读。
 
 ### 18.13 CI 中的计费守卫
