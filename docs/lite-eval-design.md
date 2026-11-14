@@ -890,6 +890,7 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
       - "runner 超时取消时要捕获 `CancelledError`"：进行中标记已保证下一个用例前重启，取消时 runner 的 `finally` 照样 teardown；
       - "用 `has_answer` 判断 LongMemEval 的拒答题"：`has_answer` 标的是证据轮次，官方以 `_abs` 结尾的 id 标拒答题；
       - "`[*]` 作用在空列表上应报错"：没有命中是合法的检索输出，写进了 §18.23。
+  - 提交后的安全审查（`0f1a056`）：服务端回显请求头时，解析出的密钥会进输出或错误信息。先写了失败的测试（`/reflect` 和 `/reflect-401` 两种回显），再在 HTTP Target 里统一替换，两个改坏都变红。
   - 验证（提交前最后一次）：
     - 后端 ruff、format、mypy 通过；pytest 383 passed（锁定版本、`CI=true`、最低声明版本三种环境；最低版本按 CI 的方式直接调用 venv 的解释器）；
     - `openapi.json` 是最新的；前端 typecheck、lint、单元测试 14 条、build 通过（只有生成的 client 类型变了）；
@@ -1340,6 +1341,7 @@ runner 开始时会把要执行的命令或 URL 打印出来。
 - **HTTP Target**（§18.11 的实现）：
   - 用 httpx2 的 `AsyncClient`，不跟随重定向；`timeout_s` 不写时只有 Suite 的 `timeout_s`。
   - 请求头里的 `${NAME}` 在构建 Target 时从环境变量取，缺了就是配置错误（退出码 2，不调用任何东西）；记录里只有模板。
+  - 服务端把请求回显回来（401 页面、调试接口）时，解析出的值会出现在回复里：Target 在回复、trace、错误信息离开它之前，把每个用到的环境变量值替换成 `«redacted:env:NAME»`，并且不链接原始异常（提交 `0f1a056` 的安全审查发现）。
   - 有请求体且没写 `Content-Type` 时默认 `application/json`；模板用 `SandboxedEnvironment` 和 `StrictUndefined`，变量 `case`（用例的 JSON）和 `config`；模板语法错误在构建时报配置错误，沙箱拒绝的访问记为该用例的 `exception`。
   - JSONPath 只支持 `$`、`.key`、`[n]`（可为负）、`[*]`，比 RFC 9535 严格：`[*]` 下某一项缺键也算取不到（`invalid_output`），不悄悄少一项。`[*]` 作用在空列表上得到空列表：检索没有命中是合法的输出，不是取不到。`trace` 指向的对象按 `Trace` 校验，不合格同样是 `invalid_output`。
   - 超时（httpx2 的 `TimeoutException`，它是 `TransportError` 的子类，所以先判断）记为 `timeout`，不重试；其他传输错误按 §6 重试。

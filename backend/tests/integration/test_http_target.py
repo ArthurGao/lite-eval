@@ -49,6 +49,17 @@ def _handler(state: Server) -> type[BaseHTTPRequestHandler]:
                 state.drops -= 1
                 self.close_connection = True  # no reply: a transport error for the client
                 return
+            auth = self.headers.get("Authorization", "")
+            if self.path == "/reflect":  # a debug endpoint that echoes the request
+                answer["data"]["answer"] = {"seen": auth, "nested": [f"token was {auth}"]}
+                answer["meta"]["spans"] = [
+                    {"kind": "tool", "name": "echo", "attrs": {"auth": auth}}
+                ]
+                self._reply(200, json.dumps(answer).encode())
+                return
+            if self.path == "/reflect-401":
+                self._reply(401, f"bad credentials: {auth}".encode(), "text/plain")
+                return
             if self.path == "/status":
                 self._reply(503, b"upstream down")
             elif self.path == "/text":
@@ -231,3 +242,31 @@ def test_without_its_own_timeout_the_suite_timeout_cancels_the_request(
     )
     for error in output_errors(run_prepared(path)).values():
         assert error == ("timeout", "no reply within 0.3s")
+
+
+@pytest.mark.parametrize("route", ["/reflect", "/reflect-401"])
+def test_a_secret_the_server_echoes_back_is_masked_before_any_record(
+    tmp_path: Path, server: tuple[str, Server], monkeypatch: pytest.MonkeyPatch, route: str
+) -> None:
+    """Security review of 0f1a056: the resolved header value must not reach an output, an
+    error message or a trace, whatever the server sends back (design §18.11)."""
+    url, _ = server
+    monkeypatch.setenv("EVAL_TOKEN", SECRET)
+    path = http_suite(
+        tmp_path, f"{url}{route}", headers={"Authorization": "Bearer ${EVAL_TOKEN}"}, trace="$.meta"
+    )
+    result = run_prepared(path)
+    files = {f.name: f.read_text() for f in result.directory.iterdir()}
+    assert all(SECRET not in text for text in files.values())
+    out = load_run(result.directory).outputs[0]
+    marker = "Bearer «redacted:env:EVAL_TOKEN»"  # masked where it was, not dropped
+    if route == "/reflect":
+        assert out.error is None
+        assert out.value == {"seen": marker, "nested": [f"token was {marker}"]}
+        assert out.trace.spans[0].attrs == {"auth": marker}
+    else:
+        assert out.error is not None
+        assert (out.error.kind, out.error.message) == (
+            "http_status",
+            f"HTTP 401: bad credentials: {marker}",
+        )

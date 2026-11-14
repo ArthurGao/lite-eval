@@ -47,14 +47,45 @@ class HttpSpec(SpecBase):
         return path
 
 
-def resolve_env(template: str, what: str) -> str:
+def resolve_env(template: str, what: str, used: dict[str, str]) -> str:
+    """`${NAME}` replaced from the environment; each value used is added to `used`."""
+
     def value(m: re.Match[str]) -> str:
         name = m.group(1)
         if name not in os.environ:
             raise ConfigError(f"{what} needs the environment variable {name}, which is not set")
+        used[name] = os.environ[name]
         return os.environ[name]
 
     return _ENV.sub(value, template)
+
+
+class _Masker:
+    """Replaces the resolved header secrets wherever a reply or an error repeats them: a server
+    that echoes the request (a 401 page, a debug endpoint) must not put one into a record."""
+
+    def __init__(self, secrets: dict[str, str]) -> None:
+        # Longest first, so a secret containing another is masked whole; empty values mask nothing.
+        self._pairs = sorted(
+            ((v, f"«redacted:env:{k}»") for k, v in secrets.items() if v),
+            key=lambda p: -len(p[0]),
+        )
+
+    def text(self, value: str) -> str:
+        for secret, marker in self._pairs:
+            value = value.replace(secret, marker)
+        return value
+
+    def json(self, value: Any) -> Any:
+        if not self._pairs:
+            return value
+        if isinstance(value, str):
+            return self.text(value)
+        if isinstance(value, list):
+            return [self.json(v) for v in value]
+        if isinstance(value, dict):
+            return {self.text(k): self.json(v) for k, v in value.items()}
+        return value
 
 
 class HttpTarget(SpecIdentity):
@@ -63,7 +94,11 @@ class HttpTarget(SpecIdentity):
     def __init__(self, spec: HttpSpec, params: dict[str, JsonValue]) -> None:
         self.spec: HttpSpec = spec
         self.params = params
-        self._headers = {k: resolve_env(v, f"http header {k!r}") for k, v in spec.headers.items()}
+        secrets: dict[str, str] = {}
+        self._headers = {
+            k: resolve_env(v, f"http header {k!r}", secrets) for k, v in spec.headers.items()
+        }
+        self._mask = _Masker(secrets)
         if spec.body is not None and not any(k.lower() == "content-type" for k in spec.headers):
             self._headers["Content-Type"] = "application/json"
         env = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
@@ -122,6 +157,20 @@ class HttpTarget(SpecIdentity):
             return response.status_code, body
 
     async def run(self, case: Case) -> Output:
+        """Every message and value leaves masked; the original exception is not chained, so
+        nothing carries an echoed secret further (design §18.11)."""
+        try:
+            output = await self._run(case)
+        except TargetError as exc:
+            masked = self._mask.text(exc.message)
+            raise TargetError(
+                exc.kind, masked, usage=exc.usage, latency_ms=exc.latency_ms
+            ) from None
+        except TransportError as exc:
+            raise TransportError(self._mask.text(str(exc))) from None
+        return output
+
+    async def _run(self, case: Case) -> Output:
         """Latency is the runner's wall clock (it measures every call, failed ones too)."""
         try:
             status, body = await self._fetch(case)
@@ -133,7 +182,7 @@ class HttpTarget(SpecIdentity):
             text = body[:500].decode("utf-8", errors="replace")
             raise TargetError("http_status", f"HTTP {status}: {text}")
         try:
-            reply = json.loads(body)
+            reply = self._mask.json(json.loads(body))
             value = self._output.select(reply)
             trace = Trace.model_validate(self._trace.select(reply)) if self._trace else Trace()
         except (ValueError, LookupError, ValidationError) as exc:
