@@ -153,12 +153,49 @@ def _hex_any_case(quoted: str) -> re.Pattern[str]:
     return re.compile("".join(parts))
 
 
+def _plain(c: str) -> bool:
+    """A character no JSON or HTML encoder escapes."""
+    return c.isascii() and c.isalnum()
+
+
+def _any_case(hex_digits: str) -> str:
+    return "".join(f"[{h.lower()}{h.upper()}]" if h.isalpha() else h for h in hex_digits)
+
+
+def _escaped_any(value: str) -> re.Pattern[str]:
+    """Each character of `value` as itself or as any JSON or HTML escape of it."""
+    parts = []
+    for c in value:
+        if _plain(c):
+            parts.append(re.escape(c))
+            continue
+        cp = ord(c)
+        units = [cp] if cp <= 0xFFFF else [0xD800 + ((cp - 0x10000) >> 10), 0xDC00 + (cp & 0x3FF)]
+        alts = {
+            re.escape(c),
+            "".join(r"\\u" + _any_case(f"{u:04x}") for u in units),
+            f"&#0*{cp};",
+            "&#[xX]0*" + _any_case(f"{cp:x}") + ";",
+        }
+        for escaped in (json.dumps(c)[1:-1], html.escape(c), "\\/" if c == "/" else ""):
+            if escaped and escaped != c:
+                alts.add(re.escape(escaped))
+        if c == "'":
+            alts.add("&apos;")
+        parts.append("(?:" + "|".join(sorted(alts, key=len, reverse=True)) + ")")
+    return re.compile("".join(parts))
+
+
 @dataclass(frozen=True)
 class KnownValues:
     """Secrets by value: `{name: value}`, masked as `«redacted:<name>»` wherever they appear as
-    is, JSON-escaped (also with `\\/`), HTML-escaped or URL-encoded (`quote`, `quote_plus`, hex
-    digits in either case). Longest first, so a value containing another is masked whole. Each
-    form is one linear pass (`str.replace`, or one regex for a percent-encoded form)."""
+    is, escaped or encoded: every character that is not an ASCII letter or digit may come
+    literally, JSON-escaped (`\\"`, `\\/`, `\\uXXXX` in either case, a surrogate pair beyond
+    the BMP) or HTML-escaped (named, decimal or hex entities), in any mix (encoders differ: Go
+    writes `<` as `\\u003c`; security review of 9d8e815); or URL-encoded (`quote`,
+    `quote_plus`, hex in either case). Longer values first, so a value containing another is
+    masked whole. Each form is one linear pass (`str.replace`, or one regex without nested
+    repetition)."""
 
     values: Mapping[str, str] = field(default_factory=dict)
 
@@ -173,20 +210,23 @@ class KnownValues:
     def short(self) -> list[str]:
         return sorted(n for n, v in self._set.items() if len(v) < SHORT_SECRET)
 
+    def longest(self) -> int:
+        """An upper bound on the length of any form of any value (a surrogate-pair escape is 12
+        characters for one character): how much of a cut text may be the start of a secret."""
+        return max((12 * len(v) for v in self._set.values()), default=0)
+
     @cached_property
     def _forms(self) -> tuple[tuple[str | re.Pattern[str], str], ...]:
-        """(literal or pattern, marker), longest form first."""
+        """(literal or pattern, marker); the forms of longer values first."""
         out: dict[str | re.Pattern[str], tuple[str, int]] = {}
         for name, value in self._set.items():
             marker = _mark(name)
-            escaped = json.dumps(value)[1:-1]
-            for literal in (value, escaped, escaped.replace("/", "\\/"), html.escape(value)):
-                out.setdefault(literal, (marker, len(literal)))
+            out.setdefault(value, (marker, len(value)))
+            if any(not _plain(c) for c in value):
+                out.setdefault(_escaped_any(value), (marker, len(value)))
             for quoted in (urllib.parse.quote(value, safe=""), urllib.parse.quote_plus(value)):
-                if _HEX.search(quoted):
-                    out.setdefault(_hex_any_case(quoted), (marker, len(quoted)))
-                else:
-                    out.setdefault(quoted, (marker, len(quoted)))
+                form = _hex_any_case(quoted) if _HEX.search(quoted) else quoted
+                out.setdefault(form, (marker, len(value)))
         ordered = sorted(out.items(), key=lambda item: -item[1][1])
         return tuple((form, marker) for form, (marker, _) in ordered)
 

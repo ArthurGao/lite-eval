@@ -4,6 +4,7 @@ import html
 import json
 import time
 import urllib.parse
+from pathlib import Path
 
 import pytest
 
@@ -71,3 +72,44 @@ def test_markers_are_never_rewritten_by_a_later_secret() -> None:
     once = known.text("tok-0123456789 and env and «redacted:api_keys»")
     assert once == "«redacted:env:TOKEN» and «redacted:env:SHORT» and «redacted:api_keys»"
     assert known.text(once) == once
+
+
+GO_JSON = 'sk/a"b<c>d&e é-0123456789'  # what other encoders escape differently
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        "sk\\u002fa\\u0022b\\u003cc\\u003ed\\u0026e \\u00e9-0123456789",  # every special as \\uXXXX
+        'sk\\u002Fa\\"b\\u003Cc>d&e é-0123456789',  # mixed: some escaped, some not, upper hex
+        "sk&#47;a&quot;b&lt;c&#x3e;d&#38;e &#233;-0123456789",  # HTML numeric and named entities
+        "sk&#x2F;a&#34;b&#X3C;c&gt;d&amp;e é-0123456789",
+    ],
+)
+def test_each_encoder_s_escapes_of_a_value_are_masked_in_any_mix(form: str) -> None:
+    """Security review of 9d8e815: Go's encoding/json writes `<` as `\\u003c`, others `/` as
+    `\\u002f`, HTML may use numeric entities; a reply may escape some characters only."""
+    known = KnownValues({"env:TOKEN": GO_JSON})
+    assert known.text(f"[{form}]") == "[«redacted:env:TOKEN»]"
+
+
+def test_a_character_outside_the_bmp_is_masked_as_a_surrogate_pair_escape() -> None:
+    secret = "key-\U0001f511-0123456789"
+    known = KnownValues({"env:TOKEN": secret})
+    assert known.text(json.dumps(secret)) == '"«redacted:env:TOKEN»"'  # \\ud83d\\udd11
+    upper = "key-\\uD83D\\uDD11-0123456789"  # another encoder's case
+    assert known.text(upper) == "«redacted:env:TOKEN»"
+
+
+def test_stderr_kept_up_to_its_cap_drops_a_possible_secret_start_at_the_cut() -> None:
+    """Also when a chunk ended exactly at the cap and the secret goes on in the next one."""
+    import lite_eval.targets.command as command
+    from lite_eval.targets.command import CommandSpec, CommandTarget
+
+    target = CommandTarget(CommandSpec(argv=["true"]), {}, Path("."))
+    target._known = KnownValues({"env:T": "tok-0123456789"})
+    cap = command.STDERR_CAP
+    target._keep(b"x" * (cap - 7) + b"tok-012")  # exactly to the cap: nothing dropped yet
+    target._keep(b"3456789 and more")
+    assert b"tok-" not in target._stderr
+    assert len(target._stderr) + target._stderr_dropped == cap - 7 + 7 + len(b"3456789 and more")

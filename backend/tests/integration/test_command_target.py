@@ -470,3 +470,26 @@ def test_a_reply_that_is_not_utf8_is_invalid_output(tmp_path: Path) -> None:
     error = errors["q1"]
     assert error is not None and error[0] == "invalid_output" and "not UTF-8" in error[1]
     assert errors["q2"] is None
+
+
+def test_stderr_cut_at_its_cap_keeps_no_start_of_a_secret(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Security review of 9d8e815: the cap cut stderr inside a secret, leaving its first part,
+    which no later masking recognises. The tail that could start a secret is dropped too."""
+    import lite_eval.targets.command as command
+
+    token = "tok-" + "0123456789abcdef" * 4
+    monkeypatch.setenv("LITE_EVAL_TEST_TOKEN", token)
+    padding = "p" * 40
+    monkeypatch.setattr(command, "STDERR_CAP", len(padding) + 1 + len("LITE_EVAL_TEST_TOKEN=") + 20)
+    path = command_suite(
+        tmp_path,
+        "--stderr",
+        padding,
+        "--echo-env",
+        "LITE_EVAL_TEST_TOKEN",
+        command={"env_allow": ["PATH", "LITE_EVAL_TEST_TOKEN"]},
+    )
+    log = (run_prepared(path).directory / "target.stderr.log").read_text()
+    assert token[:8] not in log and "more bytes of stderr not kept" in log

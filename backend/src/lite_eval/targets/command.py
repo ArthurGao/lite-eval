@@ -147,7 +147,12 @@ class CommandTarget(SpecIdentity):
     def _keep(self, chunk: bytes) -> None:
         room = max(STDERR_CAP - len(self._stderr), 0)
         self._stderr += chunk[:room]
-        self._stderr_dropped += max(len(chunk) - room, 0)
+        dropped = max(len(chunk) - room, 0)
+        if dropped and not self._stderr_dropped:  # the cut, wherever a chunk ended before it:
+            tail = min(self._known.longest(), len(self._stderr))  # what it keeps last may be
+            del self._stderr[len(self._stderr) - tail :]  # the start of a secret
+            dropped += tail
+        self._stderr_dropped += dropped
 
     async def _pump_stderr(self, stream: asyncio.StreamReader) -> None:
         while chunk := await stream.read(65536):
