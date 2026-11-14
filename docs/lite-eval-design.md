@@ -918,6 +918,15 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
     - lite-mem：ruff、format、mypy 通过；pytest 358 passed（含 PG）；`-m ollama` 的两跳等价测试通过；
     - 改坏检查全部变红，源码复原；LongMemEval oracle 和 S 用最终代码跑完，临时目录都已删除。
 
+- **E4c llm-steward 迁移（2026-11-14，llm-steward 的 P8；细节见它的设计 §11 P8）**：`-m eval` 的 recall@8 门禁跑在 lite-eval 上。测试照旧经 API 加载一次语料，`StewardTarget` 包装这个租户（`setup` 不做事，跟随者共用），命中映射回语料的键；`plain` 过门禁（≥ 0.92），`rerank` 只报告；`degraded` 记为 `invalid_output`。SQLite 和 PG 上都是 0.960（rerank 0.980），漏掉的查询和原来一样；和冻结的 `_recall` 逐题相同（CI 另有伪造回复的单元测试）。lite-eval 在 llm-steward 的 dev 组里按 commit 固定（`8bc9301`，0.1.0）。lite-eval 代码没有改动。
+  - 迁移中发现、留给下面这个小阶段的 lite-eval 改动：
+    - 门禁规则不能按配置限定：suite 上的门禁对所有配置都声明，llm-steward 的 `rerank` 运行记录也带着它，但没人检查；
+    - 门禁管不了出错的用例数：要"没有出错"只能在门禁之外另写断言（llm-steward、lite-mem 的 LongMemEval 都要）。
+- **E4d（计划，E4c 之后；改 runner，先走计划模式）**：
+  - 通用的"已知值"脱敏：Target 声明它解析出的密钥，runner 在已经统一脱敏的地方（输出、trace、错误、产物）按值遮盖；HTTP Target 的几种编码形式和子进程 Target 的 stderr 都归到这里；百分号编码大小写不同的变体也一起处理（E4b 的 /simplify 和 Codex）；
+  - 门禁规则加 `configs:`（只对列出的配置生效），运行记录只带对它生效的规则；
+  - 出错数做门禁指标（如 `errors` / `error_rate`，`max: 0`）。
+
 ## 17. 已定的开工问题（2026-11-13）
 
 开工前问 owner 的四个问题。第一条由 owner 定，其余由 owner 交给实现方按设计的建议决定。
