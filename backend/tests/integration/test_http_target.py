@@ -1,5 +1,6 @@
 """HTTP targets against a real local server (design §18.11, §18.23): every failure kind."""
 
+import html
 import json
 import threading
 import time
@@ -58,6 +59,10 @@ def _handler(state: Server) -> type[BaseHTTPRequestHandler]:
                 ]
                 self._reply(200, json.dumps(answer).encode())
                 return
+            if self.path == "/reflect-bad-trace":  # a header echoed where a trace field goes
+                answer["meta"]["usage"] = auth
+                self._reply(200, json.dumps(answer).encode())
+                return
             if self.path == "/reflect-401":
                 self._reply(401, f"bad credentials: {auth}".encode(), "text/plain")
                 return
@@ -66,6 +71,9 @@ def _handler(state: Server) -> type[BaseHTTPRequestHandler]:
                 "/reflect-401-json": json.dumps({"error": "bad credentials", "auth": auth}),
                 "/reflect-401-url": "retry at /login?auth=" + urllib.parse.quote(auth, safe=""),
                 "/reflect-401-form": "auth=" + urllib.parse.quote_plus(auth),
+                "/reflect-401-slash": json.dumps({"auth": auth}).replace("/", "\\/"),
+                "/reflect-401-html": f"<p>bad credentials: {html.escape(auth)}</p>",
+                "/reflect-401-lower": "auth=" + urllib.parse.quote(auth, safe="").lower(),
             }.get(self.path)
             if echoed is not None:
                 self._reply(401, echoed.encode(), "text/plain")
@@ -74,6 +82,8 @@ def _handler(state: Server) -> type[BaseHTTPRequestHandler]:
                 self._reply(503, b"upstream down")
             elif self.path == "/text":
                 self._reply(200, b"not json", "text/plain")
+            elif self.path == "/latin1":  # not UTF-8 inside a JSON string
+                self._reply(200, b'{"data": {"answer": "caf\xe9"}}')
             elif self.path == "/slow":
                 time.sleep(1.0)
                 self._reply(200, json.dumps(answer).encode())
@@ -304,3 +314,57 @@ def test_a_secret_echoed_cut_or_encoded_in_an_error_page_is_masked_too(
     leaked = [f[:6] for f in forms if f[:6] in files + out.error.message]
     assert leaked == []
     assert "«redacted:env:EVAL_TOKEN»" in out.error.message or route == "/reflect-401-long"
+
+
+@pytest.mark.parametrize("route", ["/reflect-401-slash", "/reflect-401-html", "/reflect-401-lower"])
+def test_a_secret_echoed_in_other_encodings_is_masked_too(
+    tmp_path: Path, server: tuple[str, Server], monkeypatch: pytest.MonkeyPatch, route: str
+) -> None:
+    """E4d: masking moved to the runner (known values, design §18.12) and covers more forms:
+    JSON with `\\/`, HTML-escaped, percent-encoded with lower-case hex."""
+    url, _ = server
+    secret = 'sk-a/b"c+d=e 0123456789abcdef<x>'
+    monkeypatch.setenv("EVAL_TOKEN", secret)
+    path = http_suite(tmp_path, f"{url}{route}", headers={"Authorization": "Bearer ${EVAL_TOKEN}"})
+    result = run_prepared(path)
+    out = load_run(result.directory).outputs[0]
+    assert out.error is not None and "«redacted:env:EVAL_TOKEN»" in out.error.message
+    files = "".join(f.read_text() for f in result.directory.iterdir())
+    quoted = urllib.parse.quote(secret, safe="")
+    forms = [secret, html.escape(secret), quoted, quoted.lower(), json.dumps(secret)[1:-1]]
+    leaked = [f[:6] for f in forms if f[:6] in files + out.error.message]
+    assert leaked == []
+    assert load_run(result.directory).record.redact.known == [
+        "env:EVAL_TOKEN"
+    ]  # the name, never the value
+
+
+def test_a_secret_echoed_into_a_reply_that_fails_validation_is_masked_before_pydantic_cuts_it(
+    tmp_path: Path, server: tuple[str, Server], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """E4d /simplify (a regression of moving masking to the runner): pydantic's message shows a
+    value's first and last 24 characters, which no later pass recognises."""
+    url, _ = server
+    secret = "sk-" + "0123456789abcdef" * 4
+    monkeypatch.setenv("EVAL_TOKEN", secret)
+    path = http_suite(
+        tmp_path,
+        f"{url}/reflect-bad-trace",
+        headers={"Authorization": "Bearer ${EVAL_TOKEN}"},
+        trace="$.meta",
+    )
+    result = run_prepared(path)
+    error = load_run(result.directory).outputs[0].error
+    assert error is not None and error.kind == "invalid_output"
+    files = "".join(f.read_text() for f in result.directory.iterdir())
+    assert [p for p in (secret[:8], secret[-8:]) if p in files + error.message] == []
+
+
+def test_a_reply_that_is_not_utf8_is_invalid_output(
+    tmp_path: Path, server: tuple[str, Server]
+) -> None:
+    """JSON is UTF-8 (RFC 8259); masking decodes the reply first, and must not repair it."""
+    url, _ = server
+    errors = output_errors(run_prepared(http_suite(tmp_path, f"{url}/latin1"))).values()
+    assert errors and all(e is not None and e[0] == "invalid_output" for e in errors)
+    assert all(e is not None and "not UTF-8" in e[1] for e in errors)

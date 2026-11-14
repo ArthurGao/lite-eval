@@ -13,7 +13,9 @@ stdin and answers one line `{"case_id", "repeat", "output", "trace"?, "error"?}`
 - A process that exits on its own is restarted once; when it exits a second time the target gives
   up: every remaining case is an `exception` and `abandoned()` tells the runner the run is partial.
 - stderr is kept (at most 5 MB, the rest counted) and written, redacted, to the run directory as
-  `target.stderr.log` (`artifacts()`).
+  `target.stderr.log` (`artifacts()`). The allowed environment variables that are secrets
+  (`secret_env`, or names like `SECRET_NAME`) are declared (`secrets()`): the runner masks them
+  by value everywhere, and each line from the program is masked as it is read.
 - The process runs in its own process group; restarts and teardown signal the whole group, so a
   wrapper (`uv run python x.py`) leaves no child behind.
 - teardown: close stdin, wait, terminate, wait, kill.
@@ -23,6 +25,7 @@ import asyncio
 import contextlib
 import json
 import os
+import re
 import signal
 import time
 from pathlib import Path
@@ -31,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
 from lite_eval.contracts import Case, ErrorInfo, Output, Trace
+from lite_eval.redact import KnownValues
 from lite_eval.targets.base import MB, SpecBase, SpecIdentity, TargetError, current_repeat
 
 if TYPE_CHECKING:
@@ -38,6 +42,10 @@ if TYPE_CHECKING:
 
 STDERR_LOG = "target.stderr.log"
 STDERR_CAP = 5 * MB
+# The allowed environment variables masked by value wherever the program repeats them (design
+# §18.11, §18.12; E4d), unless `secret_env` lists them: names that look like secrets. Masking every
+# allowed value would also hide ordinary ones (a host, a model name) in outputs and scores.
+SECRET_NAME = re.compile(r"KEY|TOKEN|SECRET|PASS|CREDENTIAL|AUTH", re.IGNORECASE)
 
 
 class CommandSpec(SpecBase):
@@ -46,6 +54,7 @@ class CommandSpec(SpecBase):
     argv: list[str] = Field(min_length=1)
     cwd: str | None = None  # relative to the suite file; default: the repository root
     env_allow: list[str] = Field(default_factory=lambda: ["PATH"])
+    secret_env: list[str] | None = None  # None: the allowed names matching SECRET_NAME
     startup_timeout_s: float = Field(default=30.0, gt=0)
     max_line_bytes: int = Field(default=10 * MB, gt=0)
 
@@ -81,6 +90,7 @@ class CommandTarget(SpecIdentity):
         self._in_flight = False  # a case's exchange did not finish: stdout may be out of step
         self._restarted = False  # the one restart after an exit is used
         self._abandoned: str | None = None
+        self._known = KnownValues()  # the secrets in the environment of the running process
 
     # -------------------------------------------------------------- identity
 
@@ -90,7 +100,32 @@ class CommandTarget(SpecIdentity):
     def config(self) -> dict[str, Any]:
         s = self.spec
         # cwd as written in the suite: records hold no absolute local paths
-        return {**self.params, "command": {"argv": s.argv, "cwd": s.cwd, "env_allow": s.env_allow}}
+        command = {"argv": s.argv, "cwd": s.cwd, "env_allow": s.env_allow}
+        if s.secret_env is not None:
+            command["secret_env"] = s.secret_env
+        return {**self.params, "command": command}
+
+    def _env(self) -> dict[str, str]:
+        """What the program's environment holds: the allowed variables that are set."""
+        return {k: os.environ[k] for k in self.spec.env_allow if k in os.environ}
+
+    def secrets(self) -> dict[str, str]:
+        """The allowed variables that are secrets: `secret_env`, or names like SECRET_NAME."""
+        listed = self.spec.secret_env
+        return {
+            f"env:{name}": value
+            for name, value in self._env().items()
+            if (name in listed if listed is not None else SECRET_NAME.search(name))
+        }
+
+    def _masked(self, line: bytes, *, strict: bool) -> str:
+        """A line as text with the program's secrets masked, before anything cuts or quotes it
+        (a cut secret, or pydantic's 24 + 24 character summary of one, is unrecognisable)."""
+        try:
+            text = line.decode("utf-8", errors="strict" if strict else "replace")
+        except UnicodeDecodeError as exc:
+            raise TargetError("invalid_output", f"reply line is not UTF-8: {exc}") from None
+        return self._known.text(text)
 
     def abandoned(self) -> str | None:
         """Why the target stopped running cases, or None (the runner marks the run partial)."""
@@ -119,7 +154,8 @@ class CommandTarget(SpecIdentity):
             self._keep(chunk)
 
     async def _start(self) -> None:
-        env = {k: os.environ[k] for k in self.spec.env_allow if k in os.environ}
+        env = self._env()
+        self._known = KnownValues(self.secrets())
         self._proc = await asyncio.create_subprocess_exec(
             *self.spec.argv,
             cwd=self.cwd,
@@ -145,12 +181,13 @@ class CommandTarget(SpecIdentity):
             raise TargetError(
                 "exception", f'no {{"ready": true}} within {self.spec.startup_timeout_s}s'
             ) from None
+        text = self._masked(line, strict=False)
         try:
-            ready = json.loads(line)
+            ready = json.loads(text)
         except ValueError:
             ready = None
         if ready != {"ready": True}:
-            raise TargetError("exception", f'first line was not {{"ready": true}}: {line[:200]!r}')
+            raise TargetError("exception", f'first line was not {{"ready": true}}: {text[:200]!r}')
 
     async def _exits(self, proc: asyncio.subprocess.Process, after: str, then: str) -> bool:
         try:
@@ -235,14 +272,12 @@ class CommandTarget(SpecIdentity):
             await self._proc.stdin.drain()
         except (BrokenPipeError, ConnectionResetError) as exc:
             raise _Exited from exc
-        line = await self._readline()
+        text = self._masked(await self._readline(), strict=True)
         try:
-            reply = _Reply.model_validate_json(line)
+            reply = _Reply.model_validate_json(text)
         except ValidationError as exc:
             raise TargetError(
-                "invalid_output",
-                f"reply is not a reply line: {exc}",
-                value=line[:500].decode("utf-8", errors="replace"),
+                "invalid_output", f"reply is not a reply line: {exc}", value=text[:500]
             ) from exc
         if (reply.case_id, reply.repeat) != (case.id, repeat):
             raise TargetError(

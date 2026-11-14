@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 
-from lite_eval.contracts import Case, Output, Span, Usage
+from lite_eval.contracts import Case, Output, Span, Trace, Usage
 from lite_eval.datasets.local import load_dataset
-from lite_eval.errors import ConfigError
+from lite_eval.errors import ConfigError, RunError
 from lite_eval.runner import RunOptions, RunResult, backoff_s, execute
 from lite_eval.store import load_run
 from lite_eval.suite import load_suite
@@ -521,3 +521,122 @@ def test_a_composite_of_binary_scorers_is_binary_too(tmp_path: Path) -> None:
     (result,) = run(tmp_path, [("a", FakeTarget())], scorers=[both])
 
     assert list(result.record.summary.metrics) == ['{"all_of":["exact_match","contains"]}']
+
+
+SECRET = "s3cr3t-value-0123456789"
+
+
+class _Leaky(FakeTarget):
+    """Repeats its own secret everywhere a target can put text (E4d, design §18.12)."""
+
+    def secrets(self) -> dict[str, str]:
+        return {"env:SERVICE_KEY": SECRET, "env:PIN": "1234"}
+
+    async def run(self, case: Case) -> Output:
+        if case.id == "q3":
+            from lite_eval.targets.base import TargetError
+
+            raise TargetError("exception", f"login failed for key {SECRET}")
+        span = Span(kind="tool", name="call", attrs={"header": f"Bearer {SECRET}"})
+        return Output(
+            case_id=case.id,
+            value=f"answer from {SECRET}",
+            trace=Trace(spans=[span]),
+        )
+
+    def artifacts(self) -> dict[str, str]:
+        return {"target.log": f"started with {SECRET}\n"}
+
+    def abandoned(self) -> str | None:
+        return f"gave up (key {SECRET})"
+
+
+def test_a_target_s_declared_secrets_are_masked_in_everything_the_run_keeps(
+    tmp_path: Path,
+) -> None:
+    (result,) = run(tmp_path, [("a", _Leaky())], cache="on")
+    root_text = "".join(p.read_text(errors="replace") for p in tmp_path.rglob("*") if p.is_file())
+    assert SECRET not in root_text  # outputs, spans, errors, scores, artifact, warnings, cache
+    outputs = {o.case_id: o for o in load_run(result.directory).outputs}
+    assert outputs["q1"].value == "answer from «redacted:env:SERVICE_KEY»"
+    assert outputs["q1"].trace.spans[0].attrs == {"header": "Bearer «redacted:env:SERVICE_KEY»"}
+    error = outputs["q3"].error
+    assert error is not None and error.message == "login failed for key «redacted:env:SERVICE_KEY»"
+    log = (result.directory / "target.log").read_text()
+    assert log == "started with «redacted:env:SERVICE_KEY»\n"
+    codes = {w.code: w.message for w in result.record.warnings}
+    assert "«redacted:env:SERVICE_KEY»" in codes["target_abandoned"]
+    assert "env:PIN" in codes["short_secret"] and "1234" not in codes["short_secret"]
+    assert result.record.redact.known == ["env:PIN", "env:SERVICE_KEY"]  # names only
+
+
+def test_a_declared_secret_in_a_score_s_evidence_is_masked_too(tmp_path: Path) -> None:
+    """A scorer may repeat the expected value (`contains` lists what is missing): scoring goes
+    through the same per-config redaction as generation (E4d)."""
+    cases = [{"id": "q1", "input": "x", "expected": [f"key {SECRET}"]}]
+    (result,) = run(tmp_path, [("a", _Leaky())], cases=cases, scorers=["contains"])
+    scores = (result.directory / "scores.jsonl").read_text()
+    assert SECRET not in scores
+    assert "key «redacted:env:SERVICE_KEY»" in scores
+
+
+class _LeakySetup(_Leaky):
+    async def setup(self, dataset: Any) -> None:
+        raise RuntimeError(f"cannot connect with {SECRET}")
+
+
+class _LeakyTeardown(_Leaky):
+    async def teardown(self) -> None:
+        raise RuntimeError(f"cannot close session {SECRET}")
+
+
+def test_setup_and_teardown_failures_mask_the_target_s_secrets(tmp_path: Path) -> None:
+    """The CLI prints these, and pytest prints a traceback of the cause: neither keeps a
+    declared secret (E4d /simplify)."""
+    with pytest.raises(RunError) as setup:
+        run(tmp_path / "a", [("a", _LeakySetup())])
+    assert SECRET not in str(setup.value) and setup.value.__cause__ is None
+    assert "cannot connect with «redacted:env:SERVICE_KEY»" in str(setup.value)
+    with pytest.raises(RunError) as teardown:
+        run(tmp_path / "b", [("a", _LeakyTeardown())])
+    assert SECRET not in str(teardown.value) and teardown.value.__cause__ is None
+    assert "cannot close session «redacted:env:SERVICE_KEY»" in str(teardown.value)
+
+
+class _SecretInConfig(_Leaky):
+    """A target that reads its credential into its config, and says so in describe()."""
+
+    def config(self) -> dict[str, Any]:
+        return {"api_key": SECRET, "mode": "x"}
+
+    def describe(self) -> str:
+        return f"calls the service with {SECRET}"
+
+
+def test_a_declared_secret_in_the_target_config_or_description_is_masked(tmp_path: Path) -> None:
+    """Codex E4d: TargetRecord.config and the announce line; the cache key keeps the value."""
+    from lite_eval.runner import prepare_targets
+
+    (result,) = run(tmp_path, [("a", _SecretInConfig())])
+    assert result.record.target.config["api_key"] == "«redacted:env:SERVICE_KEY»"
+    assert SECRET not in (result.directory / "run.json").read_text()
+    lines: list[str] = []
+    module = tmp_path / "secret_target.py"
+    module.write_text(
+        "from tests.integration.test_runner import _SecretInConfig\n"
+        "def make(**_): return _SecretInConfig()\n"
+    )
+    suite = load_suite(
+        write_suite(
+            tmp_path / "b", targets=[{"python": "secret_target:make", "configs": [{"name": "a"}]}]
+        )
+    )
+    import sys
+
+    sys.path.insert(0, str(tmp_path))
+    try:
+        prepare_targets(suite, announce=lines.append)
+    finally:
+        sys.path.remove(str(tmp_path))
+        sys.modules.pop("secret_target", None)
+    assert lines == ["config a: calls the service with «redacted:env:SERVICE_KEY»"]

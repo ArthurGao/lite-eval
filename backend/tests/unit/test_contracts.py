@@ -52,3 +52,15 @@ def test_p95_is_the_nearest_rank_without_interpolation() -> None:
     assert nearest_rank(values, 0.95) == 19.0
     assert nearest_rank([5.0], 0.95) == 5.0
     assert nearest_rank([3.0, 1.0, 2.0], 0.5) == 2.0  # ceil(1.5) = 2nd
+
+
+def test_e4d_fields_default_on_records_written_before_them() -> None:
+    """E4d only adds fields: `redact.known` (names of secrets masked by value) and a gate rule's
+    `configs`; a v1 record and a rule written without them load with the defaults."""
+    from lite_eval.contracts import GateRule
+
+    stored = load_run(V1_RUN)
+    assert stored.record.redact.known == []
+    rule = GateRule.model_validate({"metric": "exact_match", "min": 0.9})
+    assert rule.configs is None and rule.applies_to("any-config")
+    assert not GateRule(metric="exact_match", min=0.9, configs=["plain"]).applies_to("rerank")

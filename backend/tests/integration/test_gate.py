@@ -11,6 +11,8 @@ import yaml
 from typer.testing import CliRunner
 
 from lite_eval import assert_gate, run_suite
+from lite_eval.analysis.gate import metric_value
+from lite_eval.api import gate_results
 from lite_eval.cli import app
 from lite_eval.errors import ConfigError, GateFailed, RunError
 from tests.helpers import write_suite
@@ -26,9 +28,9 @@ CALLS = []
 
 class Answers:
     name = "answers"
-    def __init__(self, wrong=(), latency_ms=10.0):
-        self.wrong, self.latency_ms = list(wrong), latency_ms
-    def config(self): return {"wrong": self.wrong, "latency_ms": self.latency_ms}
+    def __init__(self, wrong=(), latency_ms=10.0, fail=()):
+        self.wrong, self.latency_ms, self.fail = list(wrong), latency_ms, list(fail)
+    def config(self): return {"wrong": self.wrong, "latency_ms": self.latency_ms, "fail": self.fail}
     def versions(self): return {"answers": "1"}
     def info(self): return {}
     def billing(self): return "free"
@@ -37,6 +39,8 @@ class Answers:
     async def teardown(self): pass
     async def run(self, case):
         CALLS.append(case.id)
+        if case.id in self.fail:
+            raise RuntimeError("the service is down")
         value = "no" if case.id in self.wrong else case.expected
         return Output(case_id=case.id, value=value, trace=Trace(latency_ms=self.latency_ms))
 """
@@ -297,3 +301,92 @@ def test_every_baseline_switch_is_logged(repo: Path) -> None:
     assert yaml.safe_load((repo / "evals" / "baselines.yaml").read_text()) == {
         "demo-suite": second.name
     }
+
+
+# ---------------------------------------------------------------- E4d: rules per config, errors
+
+
+def two_configs(repo: Path, gate: Any) -> Path:
+    return write_suite(
+        repo / "evals",
+        cases=CASES,
+        targets=[
+            {
+                "python": "answers_target:Answers",
+                "configs": [{"name": "plain"}, {"name": "rough", "wrong": ["q01", "q02", "q03"]}],
+            }
+        ],
+        gate=gate,
+    )
+
+
+def test_a_rule_scoped_to_some_configs_judges_only_those(repo: Path) -> None:
+    """llm-steward P8: only the run without rerank is gated; the other is reported."""
+    s = two_configs(repo, [{"metric": "exact_match", "min": 0.9, "configs": ["plain"]}])
+    result = runner.invoke(app, ["run", str(s), "--gate"])
+
+    assert result.exit_code == 0, result.output  # rough scores 0.85: not its rule
+    assert "gate passed: plain" in result.output
+    assert "no gate rule applies to config rough" in result.output
+    outcomes = {o.config: o for o in gate_results(run_suite(s))}
+    assert (outcomes["plain"].applied, outcomes["rough"].applied) == (1, 0)
+
+
+def test_a_rule_naming_an_unknown_config_is_refused_when_the_suite_loads(repo: Path) -> None:
+    s = two_configs(repo, [{"metric": "exact_match", "min": 0.9, "configs": ["plian"]}])
+    for args in (["run", str(s)], ["run", str(s), "--gate"]):
+        result = runner.invoke(app, args)
+        assert result.exit_code == 2
+        assert "gate rule names config(s) ['plian'], not in this suite" in result.output
+    assert calls() == []
+
+
+@pytest.mark.parametrize(
+    ("gate", "fail", "message"),
+    [
+        ([{"metric": "errors", "max": 0}], ["q03"], "errors = 1.0000 > max 0"),
+        ([{"metric": "errors", "max": 0}], [], None),
+        ([{"metric": "error_rate", "max": 0.04}], ["q03"], "error_rate = 0.0500 > max 0.04"),
+        ([{"metric": "error_rate", "max": 0.05}], ["q03"], None),
+    ],
+)
+def test_errored_cases_can_be_gated(
+    repo: Path, gate: Any, fail: list[str], message: str | None
+) -> None:
+    s = write_suite(
+        repo / "evals",
+        cases=CASES,
+        targets=[{"python": "answers_target:Answers", "configs": [{"name": "c", "fail": fail}]}],
+        gate=gate,
+    )
+    result = runner.invoke(app, ["run", str(s), "--gate"])
+
+    assert result.exit_code == (1 if message else 0), result.output
+    if message:
+        assert message in result.output
+
+
+def test_scoring_errors_are_a_gate_metric_and_run_metrics_are_absolute_only(repo: Path) -> None:
+    s = suite(repo, [{"metric": "scoring_errors", "max": 0}])
+    (run,) = run_suite(s)
+    record = run.record.model_copy(
+        update={"summary": run.record.summary.model_copy(update={"scoring_errors": {"x": 2}})}
+    )
+    assert metric_value(record, "scoring_errors") == 2.0
+    assert metric_value(run.record, "scoring_errors") == 0.0
+    result = gate_run(repo, [{"metric": "errors", "compare_to": "baseline", "max_drop": 1}])
+    assert result.exit_code == 2
+    assert "errors cannot be compared to the baseline" in result.output
+
+
+def test_a_gate_that_judges_none_of_the_runs_is_a_configuration_error(repo: Path) -> None:
+    """Codex E4d: rules scoped to configs not run (`--config rough`) judge nothing; that is not
+    a pass. One unjudged config next to a judged one is fine (llm-steward's rerank)."""
+    s = two_configs(repo, [{"metric": "exact_match", "min": 0.9, "configs": ["plain"]}])
+    result = runner.invoke(app, ["run", str(s), "--gate", "--config", "rough"])
+    assert result.exit_code == 2
+    assert "no gate rule applies to any of these runs" in result.output
+    results = run_suite(s)
+    with pytest.raises(ConfigError, match="no gate rule applies to any of these runs"):
+        assert_gate([r for r in results if r.record.target.config["name"] == "rough"])
+    assert_gate(results)  # plain judged and passing, rough not judged: passes

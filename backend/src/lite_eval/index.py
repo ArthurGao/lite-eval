@@ -137,8 +137,8 @@ def run_row(record: RunRecord) -> RunRow:
         latency_p50_ms=c.latency_p50_ms,
         latency_p95_ms=c.latency_p95_ms,
         warnings=len(record.warnings),
-        target_errors=sum(s.target_errors.values()),
-        scoring_errors=sum(s.scoring_errors.values()),
+        target_errors=s.errored_outputs,
+        scoring_errors=s.scoring_error_count,
     )
 
 

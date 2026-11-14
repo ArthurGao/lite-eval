@@ -34,6 +34,7 @@ from lite_eval.contracts import (
     ErrorInfo,
     ErrorKind,
     Output,
+    RedactConfig,
     RunRecord,
     RunStatus,
     RunSummary,
@@ -48,7 +49,7 @@ from lite_eval.contracts import (
 from lite_eval.datasets.local import Dataset, load_dataset
 from lite_eval.errors import ConfigError, RunError
 from lite_eval.packs.cost import cost_summary
-from lite_eval.redact import Redactor, from_spec
+from lite_eval.redact import SHORT_SECRET, KnownValues, Redactor, from_spec
 from lite_eval.scorers.base import Scorer, safe_score
 from lite_eval.scorers.compose import build_scorer, parse_scorer_id
 from lite_eval.scorers.ranking import RankScorer, ranx_value
@@ -421,6 +422,8 @@ class _ConfigResult:
     generation: _Generation
     scores: list[Score]
     warnings: list[RunWarning]
+    redact: RedactConfig  # the suite's rules, plus the names of the secrets masked by value
+    config: dict[str, Any]  # the target's config as recorded: masked (the cache key is not)
     artifacts: dict[str, str] = field(default_factory=dict)  # redacted files for the run dir
 
 
@@ -495,10 +498,35 @@ def _suite_ref(suite: Suite) -> SuiteRef:
     return SuiteRef(name=suite.spec.name, path=rel, sha256=suite.sha256)
 
 
+def _known(target: Target) -> KnownValues:
+    """The secrets a target declares after its setup (`secrets()`, design §18.12), by value."""
+    declare = getattr(target, "secrets", None)
+    if not callable(declare):
+        return KnownValues()
+    declared = declare()
+    if not isinstance(declared, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in declared.items()
+    ):
+        raise RunError(f"{target.name}.secrets() must return a dict of str to str")
+    return KnownValues(dict(declared))
+
+
+def _known_or_none(target: Target) -> KnownValues:
+    """The target's secrets for masking an error message; none if it cannot say (a failed
+    setup may leave `secrets()` unable to answer, and that must not hide the real error)."""
+    try:
+        return _known(target)
+    except Exception:
+        return KnownValues()
+
+
 async def _run_config(
     ctx: _Context, config_name: str, target: Target, extra_warnings: list[RunWarning]
 ) -> _ConfigResult:
-    """Generate and score one config whose setup is already done."""
+    """Generate and score one config whose setup is already done. Everything it keeps goes
+    through the suite's redaction plus the target's own secrets, masked by value."""
+    known = _known(target)
+    redactor = ctx.redactor.with_known(known)
     identity = _Identity.of(target)
     repeats = _repeats(ctx.suite, target)
     started = datetime.now(UTC)
@@ -508,16 +536,24 @@ async def _run_config(
         target,
         identity,
         repeats,
-        ctx.redactor,
+        redactor,
         ctx.cache,
         ctx.ledger,
         ctx.options,
     ).run()
-    scores = score_outputs(ctx.dataset, ctx.scorers, generation.outputs, ctx.redactor)
+    scores = score_outputs(ctx.dataset, ctx.scorers, generation.outputs, redactor)
     collect = getattr(target, "artifacts", None)
     raw_artifacts: dict[str, str] = collect() if callable(collect) else {}
-    artifacts = {name: ctx.redactor.text(text) for name, text in raw_artifacts.items()}
+    artifacts = {name: redactor.text(text) for name, text in raw_artifacts.items()}
     warnings = list(extra_warnings)
+    if known.short():
+        warnings.append(
+            _warn(
+                "short_secret",
+                f"secret(s) {known.short()} shorter than {SHORT_SECRET} characters: masked by "
+                "value anyway, which may also hide ordinary text in outputs and scores",
+            )
+        )
     if generation.abandoned:
         warnings.append(
             _warn("target_abandoned", f"{generation.abandoned}: the cases after it were not run")
@@ -530,9 +566,14 @@ async def _run_config(
         finished_at=datetime.now(UTC),
         generation=generation,
         scores=scores,
-        warnings=warnings
-        + _generation_warnings(ctx.suite, ctx.dataset, identity, generation)
-        + _score_warnings(generation.outputs, scores),
+        warnings=[
+            w.model_copy(update={"message": redactor.text(w.message)})
+            for w in warnings
+            + _generation_warnings(ctx.suite, ctx.dataset, identity, generation)
+            + _score_warnings(generation.outputs, scores)
+        ],
+        redact=redactor.to_config(),
+        config=redactor.json(identity.config),
         artifacts=artifacts,
     )
 
@@ -591,7 +632,11 @@ async def _run_group(ctx: _Context, group: list[tuple[str, Target]]) -> list[_Co
                             )
                         )
             except Exception as exc:
-                raise RunError(f"setup of config {name!r} failed: {exc}") from exc
+                known = _known_or_none(target)
+                message = known.text(f"setup of config {name!r} failed: {exc}")
+                if known.names():  # a traceback of the cause would print it unmasked
+                    raise RunError(message) from None
+                raise RunError(message) from exc
             ready.append((name, target, notes))
         return [await _run_config(ctx, name, target, notes) for name, target, notes in ready]
     except BaseException as exc:
@@ -612,7 +657,8 @@ async def _teardown_all(
         try:
             await target.teardown()
         except Exception as exc:
-            problems.append(f"teardown of config {name!r} failed: {exc}")
+            known = _known_or_none(target)
+            problems.append(known.text(f"teardown of config {name!r} failed: {exc}"))
     if not problems:
         return
     if failure is not None:
@@ -640,7 +686,7 @@ def _record(ctx: _Context, r: _ConfigResult) -> RunRecord:
         suite=_suite_ref(ctx.suite),
         target=TargetRecord(
             name=ident.name,
-            config={"name": r.config_name, **ident.config},
+            config={"name": r.config_name, **r.config},
             versions=ident.versions,
             info=ident.info,
             billing=ident.billing,
@@ -651,7 +697,7 @@ def _record(ctx: _Context, r: _ConfigResult) -> RunRecord:
         seed=ctx.suite.spec.seed,
         concurrency=ctx.suite.spec.concurrency,
         timeout_s=ctx.suite.spec.timeout_s,
-        redact=ctx.redactor.to_config(),
+        redact=r.redact,
         started_at=r.started_at,
         finished_at=r.finished_at,
         host=platform.node(),
@@ -741,7 +787,7 @@ def prepare_targets(
                 target = build({k: v for k, v in params.items() if k != "name"})
                 describe = getattr(target, "describe", None)
                 if announce is not None and callable(describe):
-                    announce(f"config {name}: {describe()}")
+                    announce(_known_or_none(target).text(f"config {name}: {describe()}"))
                 targets.append((name, target))
     if config is not None and not targets:
         raise ConfigError(f"no config named {config!r} in {suite.path}")

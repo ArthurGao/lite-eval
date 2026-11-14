@@ -364,3 +364,109 @@ async def test_notes_survive_a_full_stderr(tmp_path: Path, monkeypatch: pytest.M
     log = target.artifacts()[STDERR_LOG]
     assert "process exited (code 3): restarting once" in log
     assert "more bytes of stderr not kept" in log
+
+
+def test_allowed_environment_values_are_masked_wherever_the_program_repeats_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """E4d (design §18.11, §18.12): an allowed variable named like a secret is masked by value;
+    a program printing one (stderr, a reply) puts nothing in the record. PATH is kept."""
+    token = "tok-0f1e2d3c4b5a69788796"
+    monkeypatch.setenv("LITE_EVAL_TEST_TOKEN", token)
+    path = command_suite(
+        tmp_path,
+        "--echo-env",
+        "LITE_EVAL_TEST_TOKEN",
+        "--echo-env",
+        "PATH",
+        command={"env_allow": ["PATH", "LITE_EVAL_TEST_TOKEN"]},
+    )
+    result = run_prepared(path)
+    files = "".join(f.read_text() for f in result.directory.iterdir())
+    assert token not in files
+    stored = load_run(result.directory)
+    marker = "«redacted:env:LITE_EVAL_TEST_TOKEN»"
+    assert stored.outputs[0].value == {
+        "LITE_EVAL_TEST_TOKEN": marker,
+        "PATH": os.environ["PATH"],  # not a secret: kept as it is
+    }
+    assert f"LITE_EVAL_TEST_TOKEN={marker}" in (result.directory / "target.stderr.log").read_text()
+    assert stored.record.redact.known == ["env:LITE_EVAL_TEST_TOKEN"]
+
+
+LONG_TOKEN = "tok-" + "0123456789abcdef" * 4  # longer than pydantic's 24 + 24 character cut
+
+
+def _leaked(token: str, text: str) -> list[str]:
+    return [part for part in (token[:8], token[-8:]) if part in text]
+
+
+def test_a_reply_that_is_not_a_reply_line_is_masked_before_it_is_cut(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """E4d /simplify: the line is cut to 500 bytes and pydantic's message shows a value's first
+    and last 24 characters; masked afterwards, neither cut form is recognisable."""
+    monkeypatch.setenv("LITE_EVAL_TEST_TOKEN", LONG_TOKEN)
+    path = command_suite(
+        tmp_path,
+        "--leak-env",
+        "LITE_EVAL_TEST_TOKEN",
+        command={"env_allow": ["PATH", "LITE_EVAL_TEST_TOKEN"]},
+    )
+    result = run_prepared(path)
+    files = "".join(f.read_text() for f in result.directory.iterdir())
+    error = load_run(result.directory).outputs[0].error
+    assert error is not None and error.kind == "invalid_output"
+    assert _leaked(LONG_TOKEN, files + error.message) == []
+
+
+def test_a_setup_failure_masks_the_program_s_secrets_in_its_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first line is quoted (cut to 200) in the setup error, which the CLI prints."""
+    monkeypatch.setenv("LITE_EVAL_TEST_TOKEN", LONG_TOKEN)
+    path = command_suite(
+        tmp_path,
+        "--ready-echo-env",
+        "LITE_EVAL_TEST_TOKEN",
+        command={"env_allow": ["PATH", "LITE_EVAL_TEST_TOKEN"]},
+    )
+    with pytest.raises(RunError) as failed:
+        run_prepared(path)
+    assert _leaked(LONG_TOKEN, str(failed.value)) == []
+    assert "«redacted:env:LITE_EVAL_TEST_TOKEN»" in str(failed.value)
+
+
+def test_secret_variables_are_named_like_secrets_unless_listed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Masking every allowed value would also hide ordinary ones (a host, a model name) in
+    outputs and scores: by default only names like KEY, TOKEN, SECRET, PASS(WORD),
+    CREDENTIAL, AUTH are secrets; `secret_env` lists them explicitly instead."""
+    monkeypatch.setenv("LITE_EVAL_TEST_TOKEN", "tok-0f1e2d3c4b5a69788796")
+    monkeypatch.setenv("LITE_EVAL_TEST_HOST", "127.0.0.1:11434")
+    names = ["PATH", "LITE_EVAL_TEST_TOKEN", "LITE_EVAL_TEST_HOST"]
+    flags = [x for n in names[1:] for x in ("--echo-env", n)]
+    default = command_suite(tmp_path / "a", *flags, command={"env_allow": names})
+    value = load_run(run_prepared(default).directory).outputs[0].value
+    assert value == {
+        "LITE_EVAL_TEST_TOKEN": "«redacted:env:LITE_EVAL_TEST_TOKEN»",
+        "LITE_EVAL_TEST_HOST": "127.0.0.1:11434",
+    }
+    listed = command_suite(
+        tmp_path / "b", *flags, command={"env_allow": names, "secret_env": ["LITE_EVAL_TEST_HOST"]}
+    )
+    value = load_run(run_prepared(listed).directory).outputs[0].value
+    assert value == {
+        "LITE_EVAL_TEST_TOKEN": "tok-0f1e2d3c4b5a69788796",
+        "LITE_EVAL_TEST_HOST": "«redacted:env:LITE_EVAL_TEST_HOST»",
+    }
+
+
+def test_a_reply_that_is_not_utf8_is_invalid_output(tmp_path: Path) -> None:
+    """Masking decodes each line first; a reply that is not UTF-8 is not repaired on the way."""
+    path = command_suite(tmp_path, "--latin1-on", "q1")
+    errors = output_errors(run_prepared(path))
+    error = errors["q1"]
+    assert error is not None and error[0] == "invalid_output" and "not UTF-8" in error[1]
+    assert errors["q2"] is None

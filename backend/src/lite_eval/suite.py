@@ -108,6 +108,10 @@ class SuiteSpec(_Spec):
         names = [str(c["name"]) for t in self.targets for c in t.configs]
         if len(set(names)) != len(names):
             raise ValueError(f"config names must be unique across targets: {names}")
+        for rule in self.gate.rules if self.gate else []:
+            unknown = sorted(set(rule.configs or []) - set(names))
+            if unknown:
+                raise ValueError(f"gate rule names config(s) {unknown}, not in this suite: {names}")
         return self
 
 

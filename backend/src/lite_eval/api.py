@@ -6,7 +6,7 @@ from pathlib import Path
 from lite_eval.analysis.compare import compare
 from lite_eval.analysis.gate import GateOutcome, evaluate_gate
 from lite_eval.contracts import Comparison
-from lite_eval.errors import GateFailed, RunError
+from lite_eval.errors import ConfigError, GateFailed, RunError
 from lite_eval.report.terminal import render_gate
 from lite_eval.runner import RunResult
 from lite_eval.store import StoredRun, baseline_run, load_run, root_of
@@ -21,7 +21,8 @@ def compare_runs(baseline: str | Path, candidate: str | Path) -> Comparison:
 
 def gate_results(results: Sequence[RunResult]) -> list[GateOutcome]:
     """One outcome per run, from what the runner holds; each baseline is read once.
-    Raises ConfigError for a gate that cannot be evaluated (exit 2)."""
+    Raises ConfigError for a gate that cannot be evaluated, or that judges none of the runs
+    (exit 2); a run no rule applies to next to a judged one is reported, not failed."""
     baselines: dict[tuple[Path, str], StoredRun | None] = {}
     outcomes = []
     for r in results:
@@ -34,6 +35,10 @@ def gate_results(results: Sequence[RunResult]) -> list[GateOutcome]:
             base = baselines[key]
         comparison = compare(base.record, base.scores, rec, r.scores) if base else None
         outcomes.append(evaluate_gate(rec, base.record if base else None, comparison))
+    if outcomes and not any(o.applied or o.failures for o in outcomes):
+        # Rules scoped to configs that did not run judge nothing: not a pass (Codex E4d).
+        configs = sorted(o.config for o in outcomes)
+        raise ConfigError(f"no gate rule applies to any of these runs (configs {configs})")
     return outcomes
 
 

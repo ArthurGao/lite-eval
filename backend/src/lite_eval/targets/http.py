@@ -9,7 +9,6 @@ JSON) and `config` (the config's parameters).
 import json
 import os
 import re
-import urllib.parse
 from typing import TYPE_CHECKING, Any, Literal
 
 import httpx2
@@ -19,6 +18,7 @@ from pydantic import Field, JsonValue, ValidationError, field_validator
 
 from lite_eval.contracts import Case, Output, Trace
 from lite_eval.errors import ConfigError
+from lite_eval.redact import KnownValues
 from lite_eval.targets.base import MB, SpecBase, SpecIdentity, TargetError, TransportError
 from lite_eval.targets.jsonpath import JsonPath, compile_path
 
@@ -61,54 +61,17 @@ def resolve_env(template: str, what: str, used: dict[str, str]) -> str:
     return _ENV.sub(value, template)
 
 
-class _Masker:
-    """Replaces the resolved header secrets wherever a reply or an error repeats them: a server
-    that echoes the request (a 401 page, a debug endpoint) must not put one into a record."""
-
-    def __init__(self, secrets: dict[str, str]) -> None:
-        # Each value as sent and as an error page may repeat it (JSON-escaped, URL-encoded).
-        # Longest first, so a secret containing another is masked whole; empty values mask nothing.
-        pairs = {
-            form: f"«redacted:env:{k}»"
-            for k, v in secrets.items()
-            if v
-            for form in (
-                v,
-                json.dumps(v)[1:-1],
-                urllib.parse.quote(v, safe=""),
-                urllib.parse.quote_plus(v),
-            )
-        }
-        self._pairs = sorted(pairs.items(), key=lambda p: -len(p[0]))
-
-    def text(self, value: str) -> str:
-        for secret, marker in self._pairs:
-            value = value.replace(secret, marker)
-        return value
-
-    def json(self, value: Any) -> Any:
-        if not self._pairs:
-            return value
-        if isinstance(value, str):
-            return self.text(value)
-        if isinstance(value, list):
-            return [self.json(v) for v in value]
-        if isinstance(value, dict):
-            return {self.text(k): self.json(v) for k, v in value.items()}
-        return value
-
-
 class HttpTarget(SpecIdentity):
     name = "http"
 
     def __init__(self, spec: HttpSpec, params: dict[str, JsonValue]) -> None:
         self.spec: HttpSpec = spec
         self.params = params
-        secrets: dict[str, str] = {}
+        used: dict[str, str] = {}
         self._headers = {
-            k: resolve_env(v, f"http header {k!r}", secrets) for k, v in spec.headers.items()
+            k: resolve_env(v, f"http header {k!r}", used) for k, v in spec.headers.items()
         }
-        self._mask = _Masker(secrets)
+        self._known = KnownValues({f"env:{name}": value for name, value in used.items()})
         if spec.body is not None and not any(k.lower() == "content-type" for k in spec.headers):
             self._headers["Content-Type"] = "application/json"
         env = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
@@ -166,21 +129,12 @@ class HttpTarget(SpecIdentity):
                     )
             return response.status_code, body
 
-    async def run(self, case: Case) -> Output:
-        """Every message and value leaves masked; the original exception is not chained, so
-        nothing carries an echoed secret further (design §18.11)."""
-        try:
-            output = await self._run(case)
-        except TargetError as exc:
-            masked = self._mask.text(exc.message)
-            raise TargetError(
-                exc.kind, masked, usage=exc.usage, latency_ms=exc.latency_ms
-            ) from None
-        except TransportError as exc:
-            raise TransportError(self._mask.text(str(exc))) from None
-        return output
+    def secrets(self) -> dict[str, str]:
+        """The resolved `${ENV}` header values: the runner masks them by value in everything it
+        keeps, however a server echoes them (design §18.12)."""
+        return dict(self._known.values)
 
-    async def _run(self, case: Case) -> Output:
+    async def run(self, case: Case) -> Output:
         """Latency is the runner's wall clock (it measures every call, failed ones too)."""
         try:
             status, body = await self._fetch(case)
@@ -188,12 +142,18 @@ class HttpTarget(SpecIdentity):
             raise TargetError("timeout", f"http timeout: {type(exc).__name__}") from exc
         except httpx2.TransportError as exc:
             raise TransportError(f"{type(exc).__name__}: {exc}") from exc
-        if not 200 <= status < 300:
-            # Masked whole, then cut: a cut first could leave the start of a secret unmasked.
-            text = self._mask.text(body.decode("utf-8", errors="replace"))[:500]
-            raise TargetError("http_status", f"HTTP {status}: {text}")
+        # Masked here, whole, before anything cuts it: the error page below is cut to 500, and
+        # pydantic's message shows a value's first and last 24 characters; the runner masks again,
+        # but a cut secret is unrecognisable. JSON is UTF-8 (RFC 8259).
+        ok = 200 <= status < 300
+        try:  # an error page is shown as it comes; a reply must be UTF-8 to be read
+            text = self._known.text(body.decode("utf-8", errors="strict" if ok else "replace"))
+        except UnicodeDecodeError as exc:
+            raise TargetError("invalid_output", f"reply is not UTF-8: {exc}") from None
+        if not ok:
+            raise TargetError("http_status", f"HTTP {status}: {text[:500]}")
         try:
-            reply = self._mask.json(json.loads(body))
+            reply = json.loads(text)
             value = self._output.select(reply)
             trace = Trace.model_validate(self._trace.select(reply)) if self._trace else Trace()
         except (ValueError, LookupError, ValidationError) as exc:

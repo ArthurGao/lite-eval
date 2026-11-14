@@ -10,10 +10,18 @@ Built-in rules:
 - `emails`.
 Suite-defined patterns replace their whole match. Every replacement is `«redacted:<rule>»`;
 redacting twice gives the same text.
+
+Known values (E4d): secrets a target declares (`secrets()`: a resolved `${ENV}` header, an
+allowed environment variable) are masked by value before any rule, in every form a reply may
+repeat them (`KnownValues`). Only their names are recorded.
 """
 
 import bisect
+import dataclasses
+import html
+import json
 import re
+import urllib.parse
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -126,6 +134,86 @@ _BUILTIN_NAMES = tuple(_BUILTIN)
 _SECRET_KEY = re.compile(r"^(?:.*[_-])?(?:api[_-]?key|token|secret|password)$", re.IGNORECASE)
 
 
+SHORT_SECRET = 8  # a shorter value is still masked, but may hide ordinary text: the run warns
+
+_HEX = re.compile(r"%([0-9A-F])([0-9A-F])")
+_MARKER = re.compile(r"«redacted:[^«»\s]{1,200}»")
+_HOLD_BASE = 0xF0000  # supplementary private-use plane A: never in a secret or a reply's text
+_HOLD_MAX = 0xFFFE  # characters U+F0000 to U+FFFFD
+
+
+def _hex_any_case(quoted: str) -> re.Pattern[str]:
+    """A percent-encoded form whose %XX may come back in either case."""
+    parts, last = [], 0
+    for m in _HEX.finditer(quoted):
+        parts.append(re.escape(quoted[last : m.start()]))
+        parts.append("%" + "".join(f"[{c}{c.lower()}]" if c.isalpha() else c for c in m.groups()))
+        last = m.end()
+    parts.append(re.escape(quoted[last:]))
+    return re.compile("".join(parts))
+
+
+@dataclass(frozen=True)
+class KnownValues:
+    """Secrets by value: `{name: value}`, masked as `«redacted:<name>»` wherever they appear as
+    is, JSON-escaped (also with `\\/`), HTML-escaped or URL-encoded (`quote`, `quote_plus`, hex
+    digits in either case). Longest first, so a value containing another is masked whole. Each
+    form is one linear pass (`str.replace`, or one regex for a percent-encoded form)."""
+
+    values: Mapping[str, str] = field(default_factory=dict)
+
+    @cached_property
+    def _set(self) -> dict[str, str]:
+        """The values that mask something (an empty one would match everywhere)."""
+        return {name: value for name, value in self.values.items() if value}
+
+    def names(self) -> list[str]:
+        return sorted(self._set)
+
+    def short(self) -> list[str]:
+        return sorted(n for n, v in self._set.items() if len(v) < SHORT_SECRET)
+
+    @cached_property
+    def _forms(self) -> tuple[tuple[str | re.Pattern[str], str], ...]:
+        """(literal or pattern, marker), longest form first."""
+        out: dict[str | re.Pattern[str], tuple[str, int]] = {}
+        for name, value in self._set.items():
+            marker = _mark(name)
+            escaped = json.dumps(value)[1:-1]
+            for literal in (value, escaped, escaped.replace("/", "\\/"), html.escape(value)):
+                out.setdefault(literal, (marker, len(literal)))
+            for quoted in (urllib.parse.quote(value, safe=""), urllib.parse.quote_plus(value)):
+                if _HEX.search(quoted):
+                    out.setdefault(_hex_any_case(quoted), (marker, len(quoted)))
+                else:
+                    out.setdefault(quoted, (marker, len(quoted)))
+        ordered = sorted(out.items(), key=lambda item: -item[1][1])
+        return tuple((form, marker) for form, (marker, _) in ordered)
+
+    def text(self, value: str) -> str:
+        """Markers, those already in the text and those inserted here, are held as single
+        private-use characters while the forms are replaced, so a later (shorter) secret never
+        rewrites one (Codex E4d: a secret `env` inside `«redacted:env:TOKEN»`); then restored."""
+        if not self._forms:
+            return value
+        held: list[str] = []
+
+        def hold(marker: str) -> str:
+            if len(held) == _HOLD_MAX:  # beyond the private-use plane: left in the text as is
+                return marker
+            held.append(marker)
+            return chr(_HOLD_BASE + len(held) - 1)
+
+        value = _MARKER.sub(lambda m: hold(m.group(0)), value)
+        for form, marker in self._forms:
+            token = hold(marker)
+            if isinstance(form, str):
+                value = value.replace(form, token)
+            else:
+                value = form.sub(token.replace("\\", "\\\\"), value)  # no group refs
+        return value.translate({_HOLD_BASE + i: m for i, m in enumerate(held)})
+
+
 @dataclass(frozen=True)
 class Finding:
     rule: str
@@ -136,6 +224,7 @@ class Finding:
 class Redactor:
     rules: tuple[str, ...] = ()
     patterns: Mapping[str, str] = field(default_factory=dict)
+    known: KnownValues = field(default_factory=KnownValues)  # masked first; never recorded
 
     def __post_init__(self) -> None:
         unknown = [r for r in self.rules if r not in _BUILTIN]
@@ -161,16 +250,24 @@ class Redactor:
 
     @property
     def active(self) -> bool:
-        return bool(self._compiled)
+        return bool(self._compiled) or bool(self.known.names())
+
+    def with_known(self, known: KnownValues) -> "Redactor":
+        """The same rules, with these secrets masked by value first."""
+        return dataclasses.replace(self, known=known)
 
     @classmethod
     def from_config(cls, config: RedactConfig) -> "Redactor":
+        """The recorded rules (known values are recorded by name only: already masked)."""
         return cls(rules=tuple(config.rules), patterns=dict(config.patterns))
 
     def to_config(self) -> RedactConfig:
-        return RedactConfig(rules=list(self.rules), patterns=dict(self.patterns))
+        return RedactConfig(
+            rules=list(self.rules), patterns=dict(self.patterns), known=self.known.names()
+        )
 
     def text(self, value: str) -> str:
+        value = self.known.text(value)
         for _, marker, spans in self._compiled:
             found = spans(value)
             if found:
@@ -182,7 +279,7 @@ class Redactor:
         return value
 
     def json(self, value: Any) -> Any:
-        """Redact every string inside a JSON value; keys are kept."""
+        """Redact every string inside a JSON value; keys are kept, except known secrets."""
         if isinstance(value, str):
             return self.text(value)
         if isinstance(value, list):
@@ -190,6 +287,7 @@ class Redactor:
         if isinstance(value, dict):
             out = {}
             for k, v in value.items():
+                k = self.known.text(k)  # rules keep keys; a known secret is masked even there
                 if "api_keys" in self.rules and isinstance(v, str) and _SECRET_KEY.match(k):
                     out[k] = v if v.startswith("«redacted:") else _mark("api_keys")
                 else:

@@ -922,11 +922,17 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
   - 迁移中发现、留给下面这个小阶段的 lite-eval 改动：
     - 门禁规则不能按配置限定：suite 上的门禁对所有配置都声明，llm-steward 的 `rerank` 运行记录也带着它，但没人检查；
     - 门禁管不了出错的用例数：要"没有出错"只能在门禁之外另写断言（llm-steward、lite-mem 的 LongMemEval 都要）。
-- **E4d（计划，E4c 之后；改 runner，先走计划模式）**：
-  - 通用的"已知值"脱敏：Target 声明它解析出的密钥，runner 在已经统一脱敏的地方（输出、trace、错误、产物）按值遮盖；HTTP Target 的几种编码形式和子进程 Target 的 stderr 都归到这里；百分号编码大小写不同的变体也一起处理（E4b 的 /simplify 和 Codex）；
-  - 门禁规则加 `configs:`（只对列出的配置生效），运行记录只带对它生效的规则；
-  - 出错数做门禁指标（如 `errors` / `error_rate`，`max: 0`）。
-
+- **E4d 按值脱敏已知密钥、门禁规则按配置限定、出错数做门禁指标（2026-11-14，lite-eval；计划经 owner 批准）**：
+  - 做了什么（细节见 §18.11、§18.12、§18.21）：
+    - `redact.KnownValues` 和 Target 的可选 `secrets()`：runner 给每组配置建一个带已知值的 redactor，用在生成（写缓存前）、评分、产物、运行警告、记录里的 Target 配置、announce 行、setup / teardown 的错误信息；`RedactConfig.known` 只记名字。HTTP Target 的 `_Masker` 删掉，改为声明 `secrets()`；子进程 Target 声明名字像密钥的放行变量（或 `secret_env`）。两个 Target 收到原文先整体遮盖，再截断或校验。
+    - `GateRule.configs`；`errors`、`error_rate`、`scoring_errors` 三个运行指标（只能绝对门禁）；`GateOutcome.applied`。契约只加字段，旧记录照样读（有测试），`openapi.json` 和前端 client 重新生成。
+  - 和计划不同的地方（都写进了 §18）：
+    - 子进程 Target 原定"放行的变量全当密钥、少数名字例外"，改成"名字像密钥的才算，或 `secret_env` 明确列出"：全当密钥会把 `OLLAMA_HOST` 这类普通值在每个输出里遮掉，悄悄改变评分（/simplify）；
+    - HTTP Target 原定"只在截断错误页之前遮盖"，改成"回复一到就整体遮盖"：挪到 runner 之后，pydantic 的校验错误只显示值的前后各 24 个字符，runner 认不出来，留下了密钥的两头（/simplify 发现的回退，先写了失败的测试）。
+  - /simplify（四个审查）采纳：上面两条；子进程 Target 先截断后遮盖的三处（准备行引用前 200、回复截到 500、pydantic 的信息）；setup / teardown 错误不遮盖，有已知值时也不保留异常链；回复不是 UTF-8 记为 `invalid_output`，不替换字符（两个 Target 都有测试）；错误数由 `RunSummary` 的属性统一计算（门禁和 Viewer 索引共用）；子进程只在一处构建环境；`with_known` 用 `dataclasses.replace`；`_forms` 只留（形式, 标记）。不采纳：效率审查实测每个字符串多 2.4 µs、每组配置约 24 ms，不值得为它改变替换顺序；`GateOutcome.applied` 保持计数（以后可能显示）；测试里的 suite 写法合并（只是测试代码的重复）。
+  - Codex：采纳 3 条，各先写失败的测试——记录里的 Target 配置和 `describe()` 也遮盖；门禁一个运行都没判时报配置错误；标记不被后来的短密钥改写（私用区字符保护）。不采纳 1 条：`rescore` 处理 E4d 之前的记录（理由见 §18.12）。
+  - 改坏脚本：37/37 变红，源码复原（第一轮有 2 处没变红，补了"JSON 键里的密钥"和"评分 evidence 里的密钥"两个测试；后来又发现 HTTP 和子进程的 UTF-8 各缺一个测试，补上）。
+  - 之后：llm-steward 用 `configs: [plain]` 和 `{metric: errors, max: 0}` 代替测试里的手写断言、lite-mem 的 LongMemEval 用 `errors max 0`，等 lite-eval 发布新版本、它们改了依赖之后，各自作为一个小提交来做。
 ## 17. 已定的开工问题（2026-11-13）
 
 开工前问 owner 的四个问题。第一条由 owner 定，其余由 owner 交给实现方按设计的建议决定。
@@ -1119,6 +1125,16 @@ runner 开始时会把要执行的命令或 URL 打印出来。
   - 内置 `emails`；
   - Suite 自定义的正则。
   - 替换成 `«redacted:<规则名>»`。
+  - **已知值**（E4d）：Target 用可选的 `secrets() -> {名字: 值}` 声明它用到的密钥（HTTP Target 解析出的 `${ENV}` 请求头、子进程 Target 放行的环境变量），setup 之后读取。runner 给每组配置建一个带这些值的 redactor，用在生成（含写缓存前）、评分、产物和运行警告里，先按值替换、再跑上面的规则：
+    - 形式：原样、JSON 转义（也包括 `/` 写成 `\/` 的）、HTML 转义、`quote` 和 `quote_plus`（`%XX` 的十六进制大小写都认）；替换成 `«redacted:<名字>»`，HTTP 和子进程用 `env:NAME`；多个值从长到短替换；每种形式一遍线性扫描。
+    - JSON 的键平时保留，但等于已知密钥的部分也替换。
+    - 替换时，文本里已有的标记和这次插入的标记都先换成一个私用区字符（U+F0000 起）保护起来，最后再换回：较短的密钥（如 `env`）不会改写 `«redacted:env:TOKEN»` 这样的标记，脱敏两次结果不变（Codex E4d）。
+    - 记录里的 Target 配置（`TargetRecord.config`）和运行前打印的 `describe()` 也按已知值遮盖；缓存键用原值，不受影响（Codex E4d）。
+    - `rescore` 读的是已有的运行目录，用的是记录下来的规则（已知值只有名字）：E4d 之前的运行如果在输出里留下了密钥，那份密钥本来就在那个目录里，`rescore` 不增加新的暴露；E4d 起的记录在写入前就遮盖了（Codex 提议在 rescore 时拒绝或重新取值，不采纳）。
+    - 空值跳过；短于 8 个字符的照样遮盖，但运行给出 `short_secret` 警告（可能误遮正常文本），警告只写名字。
+    - `RedactConfig.known` 只记名字，从不记值；`rescore` 和导出用的是已经遮盖过的内容，不需要这些值。
+    - 会截断、引用或交给库做摘要的文本，Target 拿到原文后先自己按已知值遮盖（runner 之后再遮一次）：截断后的密钥认不出来。
+    - setup 和 teardown 失败时的错误信息（CLI 会打印）也按这个 Target 的已知值遮盖；有已知值时不保留原始异常的链，否则 pytest 打印 traceback 时会带出原文。
   - 脱敏必须是线性时间：被测系统的输出不受我们控制，平方级的规则会在对抗性的长文本上卡住（实测 16k 字符 287 ms，1 MB 估计十几分钟）。
     - 可能从很多位置起步匹配的部分都有长度上限：URL 的 scheme ≤ 32、用户名 ≤ 256、主机名 ≤ 255；邮箱本地部分 ≤ 64、域名 ≤ 255；参数名 ≤ 64。
     - URL 里的密码**没有**长度上限，也可以含未编码的 `@`、`/`：先找出所有 `scheme://user:` 起点和所有合法的 `@host` 位置，每个起点用二分查找它后面、同一个无空白 token 里的第一个 `@host`。
@@ -1300,6 +1316,8 @@ runner 开始时会把要执行的命令或 URL 打印出来。
 - **门禁**：
   - Suite 里 `gate` 可以写成规则列表（§8.4 的写法），也可以写成 `{rules: [...], allow_partial, allow_partial_overlap}`。
   - 规则二选一：`min` / `max`，或者 `compare_to: baseline` 加 `max_drop`（可选 `require_significant`）。`latency_p50`、`latency_p95`、`cost_usd` 取自 cost 汇总，越小越好，用 `max`；对它们写相对规则在加载 Suite 时就报错（否则要等运行花完钱才发现）。
+  - 运行指标（E4d）：`errors`（出错的输出数）、`error_rate`（`errors / outputs_expected`）、`scoring_errors`，取自运行汇总，和 cost 指标一样只能写 `max` / `min`。要求"没有出错的用例"就写 `{metric: errors, max: 0}`，不必在门禁之外另写断言。
+  - 规则可以写 `configs: [名字…]`，只判这些配置（E4d：llm-steward 只给不带 rerank 的一遍过门禁）。名字不在 Suite 里时加载就报错（不带 `--gate` 也一样）。`RunRecord.gate` 仍是 Suite 声明的全部规则，规则上写着它管哪些配置；一条规则都不适用的运行，门禁输出写"没有规则适用于配置 X"，不写"通过"（`GateOutcome.applied`），也不算失败。但交给门禁的运行**一个都没被判**（例如 `--config` 只跑了规则不管的配置）是配置错误：`gate_results` / `assert_gate` 报 ConfigError，CLI 退出码 2（Codex E4d）。
   - `RunRecord.gate` 记的是有类型的 `GateSpec`（E1 记录里是 `null`，照样能读）。
   - 门禁能不能用（指标是否存在、baseline、数据集、`partial_overlap`、评分器版本）由同一个函数 `analysis.gate.gate_problems` 判断：运行前用 Suite 声明的东西调一次，运行后用记录里的东西再调一次，两边不会不一致。
   - 所有阈值比较留 1e-9 的容差：降幅正好等于 `max_drop` 时，0.95 − 1.0 在浮点数里是 −0.050000000000000044，不能因此判失败。
@@ -1374,12 +1392,15 @@ runner 开始时会把要执行的命令或 URL 打印出来。
   - 用 httpx2 的 `AsyncClient`，不跟随重定向；`timeout_s` 不写时只有 Suite 的 `timeout_s`。
   - 请求头里的 `${NAME}` 在构建 Target 时从环境变量取，缺了就是配置错误（退出码 2，不调用任何东西）；记录里只有模板。
   - 服务端把请求回显回来（401 页面、调试接口）时，解析出的值会出现在回复里：Target 在回复、trace、错误信息离开它之前，把每个用到的环境变量值替换成 `«redacted:env:NAME»`，并且不链接原始异常（提交 `0f1a056` 的安全审查发现）。错误页先整体替换再截到 500 字节（先截可能留下密钥的前半段），并且也替换值的 JSON 转义形式和 URL 编码形式（`quote`、`quote_plus`）（提交 `69ee17f` 的安全审查发现）。
+  - E4d 起这件事交给 runner 的已知值脱敏（§18.12）：HTTP Target 只用 `secrets()` 声明解析出的值；回复一到就整体遮盖一次，再截断错误页、解析、校验（runner 只看得到截断后的文本，pydantic 的校验错误也只显示值的前后各 24 个字符；E4d /simplify 发现计划里"只在截断错误页之前遮盖"不够，挪到 runner 那一步曾让校验错误里留下密钥的两头）。成功的回复必须是 UTF-8（RFC 8259），错误页照原样显示。还多认 `\/` 转义、HTML 转义和小写的百分号编码。
   - 有请求体且没写 `Content-Type` 时默认 `application/json`；模板用 `SandboxedEnvironment` 和 `StrictUndefined`，变量 `case`（用例的 JSON）和 `config`；模板语法错误在构建时报配置错误，沙箱拒绝的访问记为该用例的 `exception`。
   - JSONPath 只支持 `$`、`.key`、`[n]`（可为负）、`[*]`，比 RFC 9535 严格：`[*]` 下某一项缺键也算取不到（`invalid_output`），不悄悄少一项。`[*]` 作用在空列表上得到空列表：检索没有命中是合法的输出，不是取不到。`trace` 指向的对象按 `Trace` 校验，不合格同样是 `invalid_output`。
   - 超时（httpx2 的 `TimeoutException`，它是 `TransportError` 的子类，所以先判断）记为 `timeout`，不重试；其他传输错误按 §6 重试。
   - 延迟用 runner 的墙钟（成功和失败都一样），回复的 `trace` 里自带 `latency_ms` 时用它的。
 - **子进程 Target**（§18.11 的实现）：
   - `cwd` 相对 Suite 文件所在目录，不写时是使用方的仓库根（和 Python Target 的导入根相同）；记录里是 Suite 里写的值，不是解析后的本机路径。`env_allow` 默认 `[PATH]`。
+  - `env_allow` 放行的变量里，哪些是密钥（E4d，按值遮盖，§18.12）：名字含 `KEY`、`TOKEN`、`SECRET`、`PASS`、`CREDENTIAL`、`AUTH`（不分大小写，`targets/command.py` 的 `SECRET_NAME`）；写了 `secret_env: [...]` 就以它为准。不是全部放行的变量都当密钥：那样 `OLLAMA_HOST=127.0.0.1:11434`、模型名这类普通值会在每个输出里被遮掉，悄悄改变评分（E4d /simplify 发现，计划里原定的"全部当密钥、少数例外"因此改掉）。
+  - 程序输出的每一行在读入时先按这些值遮盖，再解析、截断或引用：准备行报错时引用前 200 个字符、回复不合格时截到 500、pydantic 的错误信息只显示一个值的前后各 24 个字符，截断后的密钥谁也认不出来。回复不是 UTF-8 时记为 `invalid_output`，不替换成别的字符。
   - Target 声明 `serial = True`，runner 对它一次只发一个用例：否则 `concurrency=4` 时排队等锁的用例会把自己的超时耗在等待上。Target 自己也有锁。
   - 回复可以带 `error: {kind, message}`，程序用它报告自己的失败（例如模型回复被截断）。
   - 不同步就重启：一个用例从写出请求到读回并核对完回复之间算"进行中"；以其他方式结束（超时、回复不是 JSON、`case_id`/`repeat` 不符、一行超长），stdout 可能和请求错位，下一个用例前重启进程。这些重启不计入"中途退出只重启一次"。重启直接 kill 旧进程，不等待；重启后没有就绪算一次退出。

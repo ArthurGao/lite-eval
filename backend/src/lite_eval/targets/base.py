@@ -29,7 +29,10 @@ class Target(Protocol):
     - `serial: bool` (False): the runner sends one case at a time, e.g. one subprocess (§18.11);
     - `abandoned() -> str | None`: why the target stopped running cases; the run is partial;
     - `artifacts() -> dict[str, str]`: text files for the run directory, redacted by the runner;
-    - `describe() -> str`: the command it runs or the URL it calls, announced before a run.
+    - `describe() -> str`: the command it runs or the URL it calls, announced before a run;
+    - `secrets() -> dict[str, str]`: `{name: value}` of the secrets it uses (read after setup);
+      the runner masks each value as `«redacted:<name>»` in everything it keeps, in the forms a
+      reply may repeat it, and records only the names (design §18.12).
     """
 
     name: str

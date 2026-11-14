@@ -1063,6 +1063,20 @@
             ],
             "title": "Compare To"
           },
+          "configs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configs"
+          },
           "max": {
             "anyOf": [
               {
@@ -1519,6 +1533,13 @@
       "RedactConfig": {
         "additionalProperties": false,
         "properties": {
+          "known": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Known",
+            "type": "array"
+          },
           "patterns": {
             "additionalProperties": {
               "type": "string"

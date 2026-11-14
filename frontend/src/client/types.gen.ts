@@ -636,6 +636,10 @@ export type GateRule = {
      */
     compare_to?: 'baseline' | null;
     /**
+     * Configs
+     */
+    configs?: Array<string> | null;
+    /**
      * Max
      */
     max?: number | null;
@@ -897,6 +901,10 @@ export type Provenance = {
  * RedactConfig
  */
 export type RedactConfig = {
+    /**
+     * Known
+     */
+    known?: Array<string>;
     /**
      * Patterns
      */

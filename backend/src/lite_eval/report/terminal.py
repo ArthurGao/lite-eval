@@ -81,6 +81,8 @@ def render_comparison(c: Comparison, limit: int = 20) -> str:
 
 
 def render_gate(outcome: GateOutcome) -> str:
+    if outcome.passed and not outcome.applied:  # never read as "checked and fine"
+        return f"gate: no gate rule applies to config {outcome.config} ({outcome.run_id})"
     if outcome.passed:
         return f"gate passed: {outcome.config} ({outcome.run_id})"
     lines = [f"gate FAILED: {outcome.config} ({outcome.run_id})"]

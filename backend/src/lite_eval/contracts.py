@@ -152,6 +152,8 @@ class ScorerRef(_Record):
 class RedactConfig(_Record):
     rules: list[str] = Field(default_factory=list)
     patterns: dict[str, str] = Field(default_factory=dict)
+    # Names of the secrets masked by value (E4d, design §18.12); the values are never recorded.
+    known: list[str] = Field(default_factory=list)
 
 
 class MetricSummary(_Record):
@@ -171,6 +173,15 @@ class RunSummary(_Record):
     groups: dict[str, dict[str, dict[str, float]]] = Field(default_factory=dict)
     target_errors: dict[str, int] = Field(default_factory=dict)
     scoring_errors: dict[str, int] = Field(default_factory=dict)
+
+    @property
+    def errored_outputs(self) -> int:
+        """Outputs that failed (every kind): the gate's `errors`, the index's column."""
+        return sum(self.target_errors.values())
+
+    @property
+    def scoring_error_count(self) -> int:
+        return sum(self.scoring_errors.values())
 
 
 class CostSummary(_Record):
@@ -205,6 +216,9 @@ COST_METRICS = {
     "latency_p95": "latency_p95_ms",
     "cost_usd": "cost_usd",
 }
+# Gate metrics read from the run summary (E4d): errored outputs and scoring errors, bounded with
+# `max` like a cost metric, never compared to a baseline.
+RUN_METRICS = ("errors", "error_rate", "scoring_errors")
 
 
 class GateRule(_Record):
@@ -217,6 +231,8 @@ class GateRule(_Record):
     max_drop: float | None = Field(default=None, ge=0)
     require_significant: bool = False
     baseline_note: str | None = None
+    # The configs this rule judges (E4d); None: every config of the suite.
+    configs: list[str] | None = None
 
     @model_validator(mode="after")
     def _one_kind(self) -> "GateRule":
@@ -232,12 +248,15 @@ class GateRule(_Record):
             )
         if self.require_significant and not relative:
             raise ValueError("require_significant only applies to a relative rule")
-        if relative and self.metric in COST_METRICS:
+        if relative and (self.metric in COST_METRICS or self.metric in RUN_METRICS):
             raise ValueError(
-                f"{self.metric} cannot be compared to the baseline: a cost metric is bounded "
-                "with `max`"
+                f"{self.metric} cannot be compared to the baseline: a cost or run metric is "
+                "bounded with `max`"
             )
         return self
+
+    def applies_to(self, config: str) -> bool:
+        return self.configs is None or config in self.configs
 
 
 class GateSpec(_Record):

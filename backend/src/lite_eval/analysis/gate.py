@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 
 from lite_eval.contracts import (
     COST_METRICS,
+    RUN_METRICS,
     CaseChange,
     Comparison,
     GateRule,
@@ -32,6 +33,7 @@ class GateOutcome:
     config: str
     failures: list[str] = field(default_factory=list)
     regressions: list[CaseChange] = field(default_factory=list)
+    applied: int = 0  # rules that judged this config (E4d: a rule may name its configs)
 
     @property
     def passed(self) -> bool:
@@ -39,10 +41,10 @@ class GateOutcome:
 
 
 def gate_metrics(scorers: Sequence[ScorerRef]) -> set[str]:
-    """Every name a gate rule may use: scorer values, declared pass rates, cost metrics."""
+    """Every name a gate rule may use: scorer values, declared pass rates, cost and run metrics."""
     names = {s.name for s in scorers}
     names |= {s.name + PASS_RATE for s in scorers if s.verdict == "separate"}
-    return names | set(COST_METRICS)
+    return names | set(COST_METRICS) | set(RUN_METRICS)
 
 
 def gate_problems(
@@ -86,6 +88,13 @@ def gate_problems(
 
 
 def metric_value(record: RunRecord, metric: str) -> float:
+    s = record.summary
+    if metric == "errors":
+        return float(s.errored_outputs)
+    if metric == "error_rate":
+        return s.errored_outputs / s.outputs_expected if s.outputs_expected else 0.0
+    if metric == "scoring_errors":
+        return float(s.scoring_error_count)
     if metric in COST_METRICS:
         value = getattr(record.cost, COST_METRICS[metric])
         if value is None:
@@ -125,7 +134,9 @@ def evaluate_gate(
     failures: list[str] = []
     if record.status == "partial" and not spec.allow_partial:
         failures.append("the run is partial (budget reached); set gate.allow_partial to accept it")
-    for rule in spec.rules:
+    config = str(record.target.config.get("name", ""))
+    rules = [rule for rule in spec.rules if rule.applies_to(config)]
+    for rule in rules:
         if rule.compare_to is None:
             value = metric_value(record, rule.metric)
             note = f" ({rule.baseline_note})" if rule.baseline_note else ""
@@ -141,7 +152,8 @@ def evaluate_gate(
     regressions = [c for c in comparison.changes if c.kind == "regressed"] if comparison else []
     return GateOutcome(
         run_id=record.run_id,
-        config=str(record.target.config.get("name", "")),
+        config=config,
         failures=failures,
         regressions=regressions,
+        applied=len(rules),
     )
