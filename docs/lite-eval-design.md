@@ -336,7 +336,7 @@ class Scorer(Protocol):
 
 | 类 | 例子 | 说明 |
 | --- | --- | --- |
-| 确定性 | 证据句包含（规范化空白，大小写按 pack 设置）、关键词组、精确匹配、集合召回和精确率、排名指标（ranx）、JSON schema、正则、`must_not` | 首选 |
+| 确定性 | 证据句包含（规范化空白，大小写按 pack 设置）、关键词组、精确匹配、集合召回和精确率、排名指标（自己实现，ranx 交叉核对）、JSON schema、正则、`must_not` | 首选 |
 | 模型评审 | 忠实度、是否答非所问、规则遵守 | 校准之后才能用（§9） |
 | 人工 | Viewer 里逐条打标 | 存为 Annotation，用于校准集和抽查 |
 
@@ -387,7 +387,7 @@ class Scorer(Protocol):
 
 | Pack | `expected` | 默认评分器与指标 | 首个使用者 |
 | --- | --- | --- | --- |
-| `retrieval` | `{doc, evidence}` 或 `{relevant: [ids]}` | 证据命中；hit@k、MRR@10、nDCG@k、recall@k（ranx）；延迟 P50/P95 | lite-rag、llm-steward |
+| `retrieval` | `{doc, evidence}` 或 `{relevant: [ids]}` | 证据命中；hit@k、MRR@10、nDCG@k、recall@k（ranx 交叉核对）；延迟 P50/P95 | lite-rag、llm-steward |
 | `memory` | 多跳：`{hops: [[kw…]…]}`；证据：`{relevant: [session 或 dia_id]}`；`must_not` | 每跳命中（`hop<n>`）、全部命中（`all_hops`）；证据召回（`recall@k`）；禁止内容（`must_not`）。推迟：抽取（`{facts}`）、更新（`{superseded, kept}`）等有项目要测时再做；拒答放到 E5 的模型评审（§18.23） | lite-mem；LongMemEval、LoCoMo |
 | `extraction` | `{items: […]}` | 召回优先；miss 列表；重复计数 | tenderted 类 |
 | `judging` | `{label}` | 一致率、混淆矩阵；支持“改坏”式的构造用例 | 评审模型的校准（§9） |
@@ -569,7 +569,7 @@ assert_gate(run)                     # 在 pytest 里调用；失败时打印退
 | promptfoo（MIT） | 声明式配置、对比视图、CI 用法 | Node 实现，偏 prompt 层 |
 | DeepEval | pytest 风格的门禁 | 指标大多靠 LLM 评审 |
 | Ragas（Apache-2.0） | RAG 生成端指标的定义：忠实度、上下文精确率和召回率 | 维护状态待核实（有报道说 2026-02 之后就没有提交），不作依赖 |
-| ranx | **直接依赖**：排名指标（对照 TREC Eval 测过）、统计检验 | — |
+| ranx | 可选 extra `[ranking]`，只做交叉核对（`--crosscheck`）：排名指标由 `scorers/ranking.py` 自己算，定义和 lite-rag 逐字一致；ranx（对照 TREC Eval 测过）再算一遍对照 | 改正（E4b）：这里原写"直接依赖"，和代码不符 |
 | LongMemEval（ICLR 2025）、LoCoMo、BEIR | 外部基准，做成数据集加载器 | 不能直接和别人自报的分数比：评审模型、token 预算都不同 |
 | Phoenix、Langfuse | 以后可以从它们导出的追踪里取数据集 | 不做追踪平台 |
 
@@ -587,7 +587,7 @@ lite-eval/
       config.py                    # pydantic-settings，前缀 LITE_EVAL_，字段不用别名
       datasets/                    # 本地目录加载、哈希；loaders/（longmemeval, locomo）
       targets/                     # python.py, http.py, command.py, fake.py（测试用）
-      scorers/                     # deterministic.py, ranking.py（ranx）, judge.py, compose.py
+      scorers/                     # deterministic.py, ranking.py（ranx 只交叉核对）, judge.py, compose.py
       packs/                       # retrieval, memory, extraction, judging, grounded, agent, cost
       runner.py                    # 两段式、缓存、并发、超时、重试、预算、setup 共享、预热、自检
       store.py                     # 运行目录读写、baseline、annotation
@@ -891,10 +891,32 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
       - "用 `has_answer` 判断 LongMemEval 的拒答题"：`has_answer` 标的是证据轮次，官方以 `_abs` 结尾的 id 标拒答题；
       - "`[*]` 作用在空列表上应报错"：没有命中是合法的检索输出，写进了 §18.23。
   - 提交后的安全审查（`0f1a056`）：服务端回显请求头时，解析出的密钥会进输出或错误信息。先写了失败的测试（`/reflect` 和 `/reflect-401` 两种回显），再在 HTTP Target 里统一替换，两个改坏都变红。
+  - 再次安全审查（`69ee17f`）：错误页先截断再替换，会留下跨在截断点上的密钥前半段；错误页里 JSON 转义或 URL 编码过的密钥也没被替换。先写失败的测试（截断、JSON、`quote`、`quote_plus` 四种回显，看前 6 个字符是否出现），改成先整体替换再截断、并替换这几种编码形式，4 个改坏都变红。
   - 验证（提交前最后一次）：
     - 后端 ruff、format、mypy 通过；pytest 383 passed（锁定版本、`CI=true`、最低声明版本三种环境；最低版本按 CI 的方式直接调用 venv 的解释器）；
     - `openapi.json` 是最新的；前端 typecheck、lint、单元测试 14 条、build 通过（只有生成的 client 类型变了）；
     - 改坏脚本 68/68 变红，源码复原。
+- **E4b lite-mem 迁移（2026-11-14，lite-eval 部分；lite-mem 部分见它的设计 §12 S11）**：
+  - lite-eval 里改了什么：
+    - 导入改成逐条读、逐条写（`iter_json_list`，§18.23）。用真实的 S（277 MB）实测：整份读入峰值 2.4 GB，流式 313 MB、3 秒；M（2.7 GB）整份读入约要 24 GB。解析失败重读时缓冲区至少翻倍（/simplify 发现：按 1 MB 递增时，一道 5 MB 的题要从头解析五六遍）。
+    - LongMemEval 每题的历史放进 `corpus/<question_id>.json`，用例里只留 `haystack: <question_id>`，runner 不用把 M 整个读进内存。这是对 E4a 数据集格式的有意改动，原测试里输入的期望跟着改了。
+    - 加 `--limit` 时，说明里写"在截止前跳过了 N 道拒答题"（Codex：截止后的拒答题没有数）。
+  - lite-mem 端（S11）：两跳评测跑在 lite-eval 上。8 组配置，同一进程里和冻结的原脚本对照：每题的命中完全相同（FakeEmbedder 进 CI，bge-m3 在 `-m ollama` 下），汇总数字和 2026-11-12 的记录相同。LongMemEval 只测检索层，结果见 lite-mem 的 KB。
+  - 安全审查（`69ee17f`，提交后）：两条都成立，见 §18.23 和上面 E4a 记录的最后一条。
+  - /simplify（四个审查）。lite-eval 采纳：缓冲区翻倍（补了数读取次数的测试，改坏变红）；报错加文件名前缀的逻辑改简单（`--include-abstention` 在读文件前检查）；在调用处写明 `notes` 读完才完整。lite-mem 端采纳的见它的 S11 记录。不采纳：
+    - 每写一个语料文件都 `mkdir(exist_ok=True)`：开销可以忽略；
+    - 把 LongMemEval 的拒答计数改成单独的统计对象：调用处写明顺序就够了。
+  - /simplify 提出、留给 owner 定：
+    - **语料要不要做密钥扫描**：从 E1 起只扫 `cases.jsonl`，`corpus/` 从来不扫（LoCoMo 的对话、lite-rag 的文档也一样）。LongMemEval 的历史挪进语料以后也不扫了。E4b 起初把这一点写成了好处，已改成如实说明（§18.23）。
+    - **通用的"已知值"脱敏**：HTTP Target 只认几种编码（原样、JSON 转义、`quote`、`quote_plus`），子进程 Target 的 stderr 不按值遮盖 `env_allow` 放行的变量。更深的做法是 `Redactor` 加一条"已知值"规则：Target 声明它解析出的密钥，runner 在已经统一脱敏的地方（输出、产物）一起遮盖。Codex 提的百分号编码大小写变体也归到这里。
+  - Codex：
+    - 采纳 1 条（先写失败的测试）：`--limit` 时拒答计数的说明。
+    - 不采纳 1 条："`[1 .2]` 在缓冲区边界处把 `1` 当成完整的数"：`1` 本来就是完整的 JSON 数，后面的 `.2` 报"第 1 项之后"是对的。
+  - 设计和代码不一致，改正：§13 的表把 ranx 写成"直接依赖"，§7、§15 写"排名指标（ranx）"；代码里排名指标是自己算的，ranx 只在可选的交叉核对里用（owner 问到 Ragas 时发现）。
+  - 验证（提交前最后一次）：
+    - lite-eval：ruff、format、mypy 通过；pytest 402 passed（锁定版本、`CI=true`、最低声明版本三种环境）；`openapi.json` 没变；
+    - lite-mem：ruff、format、mypy 通过；pytest 358 passed（含 PG）；`-m ollama` 的两跳等价测试通过；
+    - 改坏检查全部变红，源码复原；LongMemEval oracle 和 S 用最终代码跑完，临时目录都已删除。
 
 ## 17. 已定的开工问题（2026-11-13）
 
@@ -1341,7 +1363,7 @@ runner 开始时会把要执行的命令或 URL 打印出来。
 - **HTTP Target**（§18.11 的实现）：
   - 用 httpx2 的 `AsyncClient`，不跟随重定向；`timeout_s` 不写时只有 Suite 的 `timeout_s`。
   - 请求头里的 `${NAME}` 在构建 Target 时从环境变量取，缺了就是配置错误（退出码 2，不调用任何东西）；记录里只有模板。
-  - 服务端把请求回显回来（401 页面、调试接口）时，解析出的值会出现在回复里：Target 在回复、trace、错误信息离开它之前，把每个用到的环境变量值替换成 `«redacted:env:NAME»`，并且不链接原始异常（提交 `0f1a056` 的安全审查发现）。
+  - 服务端把请求回显回来（401 页面、调试接口）时，解析出的值会出现在回复里：Target 在回复、trace、错误信息离开它之前，把每个用到的环境变量值替换成 `«redacted:env:NAME»`，并且不链接原始异常（提交 `0f1a056` 的安全审查发现）。错误页先整体替换再截到 500 字节（先截可能留下密钥的前半段），并且也替换值的 JSON 转义形式和 URL 编码形式（`quote`、`quote_plus`）（提交 `69ee17f` 的安全审查发现）。
   - 有请求体且没写 `Content-Type` 时默认 `application/json`；模板用 `SandboxedEnvironment` 和 `StrictUndefined`，变量 `case`（用例的 JSON）和 `config`；模板语法错误在构建时报配置错误，沙箱拒绝的访问记为该用例的 `exception`。
   - JSONPath 只支持 `$`、`.key`、`[n]`（可为负）、`[*]`，比 RFC 9535 严格：`[*]` 下某一项缺键也算取不到（`invalid_output`），不悄悄少一项。`[*]` 作用在空列表上得到空列表：检索没有命中是合法的输出，不是取不到。`trace` 指向的对象按 `Trace` 校验，不合格同样是 `invalid_output`。
   - 超时（httpx2 的 `TimeoutException`，它是 `TransportError` 的子类，所以先判断）记为 `timeout`，不重试；其他传输错误按 §6 重试。
@@ -1359,6 +1381,7 @@ runner 开始时会把要执行的命令或 URL 打印出来。
 - **外部基准**（改动：§16 写的是"加载器"，实现为导入命令，不是 Suite 里的新写法）：`lite-eval dataset import longmemeval|locomo <官方文件> <新目录> [--limit N] [--include-abstention] [--name]` 把官方文件写成普通的数据集目录（`--include-abstention` 只用于 LongMemEval）。这样哈希、密钥扫描、`rescore` 和 Viewer 按哈希找用例内容都不用改；如果放在 Suite 里加载，Viewer 找不到这些用例。
   - `dataset.yaml` 记 `license` 和 `source: {name, url, file, sha256}`（官方文件的 sha256，从文件流式计算，不在内存里多留一份原文），`version` 是文件 sha256 的前 12 位（带 `--limit` 时加 `+firstN`），`description` 写明截取和跳过了什么。`DatasetRef.license`（E4 加的字段）把许可证带进每条运行记录。
   - 导入先在旁边的临时目录写完再改名，失败不留半个目录；目标目录已存在就拒绝。
-  - **LongMemEval**（MIT）：每题一个用例，id 是 `question_id`；输入 `{question, question_date, sessions: [{id, date, turns: [{role, content}]}]}`（`has_answer` 是标签，不给被测系统）；期望 `{relevant: answer_session_ids, answer}`（数字答案转成文本）；标签 `question_type`。`_abs` 结尾的拒答题默认跳过（和官方检索评测一致），保留时加标签 `abstention: "true"`。`--limit` 按文件顺序取前 N 个保留的问题。
+  - 官方文件逐条读、逐条写（`iter_json_list`：标准库 `json.JSONDecoder.raw_decode`，不加依赖），内存里只有正在解析的那一题（E4b 改：整份读入时 S 的 277 MB 实测占 2.4 GB，M 的 2.7 GB 约要 24 GB，本机 34 GB）。`dataset.yaml` 最后写，因为跳过了多少要读完才知道。
+  - **LongMemEval**（MIT）：每题一个用例，id 是 `question_id`；输入 `{question, question_date, haystack: <question_id>}`，这题的历史 session 放在 `corpus/<question_id>.json`：`[{id, date, turns: [{role, content}]}]`，按文件顺序（`has_answer` 是标签，不给被测系统）。E4b 改：E4a 时历史直接放在输入里，M 的 500 题合计 2.7 GB 都会进用例，runner 要全部读进内存。注意：密钥扫描（§18.12）从 E1 起只扫 `cases.jsonl`，从不扫 `corpus/`（LoCoMo 的对话、lite-rag 的文档都一样），所以历史挪进语料以后也不再被扫描；要不要扫语料是待定的问题（E4b /simplify 提出，见 §16 E4b 记录）。S 里 80% 的 session 只出现在一题，按 session 去重省不了多少，所以按题存。期望 `{relevant: answer_session_ids, answer}`（数字答案转成文本）；标签 `question_type`。`_abs` 结尾的拒答题默认跳过（和官方检索评测一致），保留时加标签 `abstention: "true"`。`--limit` 按文件顺序取前 N 个保留的问题。
   - **LoCoMo**（**CC BY-NC 4.0**：不得商用，须署名）：每段对话只写一次，放在 `corpus/<sample_id>.json`（说话人、按编号排序的 session，轮次原样保留，含 `dia_id`）；每个问答一个用例，id 是 `<sample_id>:q<nnn>`，输入 `{question, conversation: <sample_id>}`，Target 在 `setup` 里从 `dataset.corpus_dir` 读对话。把对话复制进它的约 200 个问题，每次运行都要把它哈希、扫描、发送 200 遍（E4a /simplify 发现）。期望 `{relevant: evidence, answer}`。类别 5 没有正确答案：`answer` 为空，陷阱答案单独放在 `adversarial_answer`，不当作答案。标签 `category` 只用原始编号，官方没有写明各编号的含义。
   - 测试只用 `tests/data/loaders/` 里手写的虚构样例（格式照官方文件），不提交官方数据。

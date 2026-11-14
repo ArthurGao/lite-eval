@@ -1,16 +1,20 @@
 """LongMemEval (`longmemeval_{s,m,oracle}_cleaned.json`, MIT) into cases.
 
 One case per question, id = `question_id`. The input is what a memory system is given: the question,
-its date and the haystack sessions in file order (`has_answer` is a label and is dropped). Expected
+its date and `haystack: <question_id>`, which names `corpus/<question_id>.json`: the haystack
+sessions in file order, `[{id, date, turns: [{role, content}]}]` (`has_answer` is a label and is
+dropped). Kept out of the case, so a run holds one haystack at a time (LongMemEval M is 2.7 GB)
+and, like every corpus file, the history is not secret-scanned (design §18.12). Expected
 is `{relevant: answer_session_ids, answer}`, so session recall is the retrieval pack's `recall@k`.
 Abstention questions (`_abs` id suffix) are skipped unless asked for, as the benchmark's own
 retrieval evaluation skips them; kept ones are tagged `abstention: "true"`.
 """
 
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 from lite_eval.contracts import Case
-from lite_eval.datasets.loaders._common import Loaded, Source, field_of, text
+from lite_eval.datasets.loaders._common import Item, Source, corpus_name, field_of, text
 from lite_eval.errors import ConfigError
 
 SOURCE = Source(
@@ -37,9 +41,11 @@ def _sessions(item: dict[str, Any], where: str) -> list[dict[str, Any]]:
     ]
 
 
-def read(items: list[Any], limit: int | None, include_abstention: bool) -> Loaded:
-    cases: list[Case] = []
-    skipped = 0
+def read(
+    items: Iterable[Any], limit: int | None, include_abstention: bool, notes: list[str]
+) -> Iterator[Item]:
+    """The cases, one at a time; what was left out is appended to `notes` once they are read."""
+    kept = skipped = 0
     for n, item in enumerate(items):
         qid = str(field_of(item, "question_id", f"question #{n}"))
         where = f"question {qid!r}"
@@ -47,25 +53,26 @@ def read(items: list[Any], limit: int | None, include_abstention: bool) -> Loade
         if abstention and not include_abstention:
             skipped += 1
             continue
-        if limit is not None and len(cases) >= limit:
+        if limit is not None and kept >= limit:
             break
         tags = {"question_type": str(field_of(item, "question_type", where))}
         if abstention:
             tags["abstention"] = "true"
-        cases.append(
-            Case(
-                id=qid,
-                input={
-                    "question": field_of(item, "question", where),
-                    "question_date": field_of(item, "question_date", where),
-                    "sessions": _sessions(item, where),
-                },
-                expected={
-                    "relevant": [str(s) for s in field_of(item, "answer_session_ids", where)],
-                    "answer": text(field_of(item, "answer", where)),
-                },
-                tags=tags,
-            )
+        kept += 1
+        case = Case(
+            id=qid,
+            input={
+                "question": field_of(item, "question", where),
+                "question_date": field_of(item, "question_date", where),
+                "haystack": corpus_name(qid, "question id"),
+            },
+            expected={
+                "relevant": [str(s) for s in field_of(item, "answer_session_ids", where)],
+                "answer": text(field_of(item, "answer", where)),
+            },
+            tags=tags,
         )
-    notes = [f"skipped {skipped} abstention question(s)"] if skipped else []
-    return Loaded(cases=cases, notes=notes)
+        yield Item(case, {qid: _sessions(item, where)})
+    if skipped:  # with a limit, reading stopped there: later ones are not counted
+        until = " before the limit" if limit is not None else ""
+        notes.append(f"skipped {skipped} abstention question(s){until}")

@@ -38,8 +38,8 @@ If a change must contradict the design, update the design in the same change and
 ## Current stage
 
 **E4a done (2026-11-14)**: memory pack, HTTP and subprocess targets, `dataset import` (LongMemEval, LoCoMo).
-Next: E4b (lite-mem migration, its S11; LongMemEval S / M / oracle retrieval recall), then E4c (llm-steward, its P8);
-design §16.
+**E4b (2026-11-14)**: streaming import, LongMemEval history in `corpus/`; lite-mem's S11 runs its two-hop eval and
+LongMemEval on lite-eval (oracle and S measured; M pending). Next: M, then E4c (llm-steward, its P8); design §16.
 
 ## Rules
 

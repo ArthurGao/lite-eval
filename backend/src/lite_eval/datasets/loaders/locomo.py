@@ -13,15 +13,14 @@ what the numbers mean.
 """
 
 import re
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 from lite_eval.contracts import Case
-from lite_eval.datasets.loaders._common import Loaded, Source, field_of, text
-from lite_eval.errors import ConfigError
+from lite_eval.datasets.loaders._common import Item, Source, corpus_name, field_of, text
 
 SOURCE = Source("LoCoMo", "https://github.com/snap-research/locomo", "CC BY-NC 4.0")
 _SESSION = re.compile(r"^session_([0-9]+)$")
-_SAMPLE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")  # it names a corpus file
 
 
 def _conversation(conv: dict[str, Any], where: str) -> dict[str, Any]:
@@ -40,18 +39,18 @@ def _conversation(conv: dict[str, Any], where: str) -> dict[str, Any]:
     }
 
 
-def read(items: list[Any], limit: int | None) -> Loaded:
-    cases: list[Case] = []
-    corpus: dict[str, Any] = {}
+def read(items: Iterable[Any], limit: int | None) -> Iterator[Item]:
+    kept = 0
+    seen: set[str] = set()
     for n, sample in enumerate(items):
-        sid = str(field_of(sample, "sample_id", f"sample #{n}"))
-        if not _SAMPLE_ID.match(sid):
-            raise ConfigError(f"sample id {sid!r} cannot name a corpus file")
+        sid = corpus_name(str(field_of(sample, "sample_id", f"sample #{n}")), "sample id")
         for i, qa in enumerate(field_of(sample, "qa", sid), start=1):
-            if limit is not None and len(cases) >= limit:
-                return Loaded(cases=cases, corpus=corpus)
+            if limit is not None and kept >= limit:
+                return
             where = f"{sid} question {i}"
-            if sid not in corpus:  # only conversations some kept question points at
+            corpus: dict[str, Any] = {}
+            if sid not in seen:  # only conversations some kept question points at
+                seen.add(sid)
                 corpus[sid] = _conversation(field_of(sample, "conversation", sid), sid)
             expected: dict[str, Any] = {
                 "relevant": [str(e) for e in field_of(qa, "evidence", where)],
@@ -59,12 +58,11 @@ def read(items: list[Any], limit: int | None) -> Loaded:
             }
             if "adversarial_answer" in qa:
                 expected["adversarial_answer"] = text(qa["adversarial_answer"])
-            cases.append(
-                Case(
-                    id=f"{sid}:q{i:03d}",
-                    input={"question": field_of(qa, "question", where), "conversation": sid},
-                    expected=expected,
-                    tags={"category": str(field_of(qa, "category", where))},
-                )
+            kept += 1
+            case = Case(
+                id=f"{sid}:q{i:03d}",
+                input={"question": field_of(qa, "question", where), "conversation": sid},
+                expected=expected,
+                tags={"category": str(field_of(qa, "category", where))},
             )
-    return Loaded(cases=cases, corpus=corpus)
+            yield Item(case, corpus)
