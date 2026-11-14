@@ -21,6 +21,15 @@ PACKS: dict[str, Pack] = {
             "a relevance-mode suite usually adds ndcg@10 and recall@10"
         ),
     ),
+    "memory": Pack(
+        name="memory",
+        scorers=("hop1", "hop2", "all_hops"),
+        description=(
+            "recalled memories [str | {content}] against {hops: [[keyword, ...], ...]}; "
+            "evidence recall against {relevant: [session or turn ids]} uses recall@k, "
+            "forbidden content must_not"
+        ),
+    ),
 }
 
 

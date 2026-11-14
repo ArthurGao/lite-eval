@@ -497,6 +497,10 @@ export type DatasetRef = {
      */
     hash: string;
     /**
+     * License
+     */
+    license?: string | null;
+    /**
      * Name
      */
     name: string;

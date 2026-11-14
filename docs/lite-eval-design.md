@@ -388,7 +388,7 @@ class Scorer(Protocol):
 | Pack | `expected` | 默认评分器与指标 | 首个使用者 |
 | --- | --- | --- | --- |
 | `retrieval` | `{doc, evidence}` 或 `{relevant: [ids]}` | 证据命中；hit@k、MRR@10、nDCG@k、recall@k（ranx）；延迟 P50/P95 | lite-rag、llm-steward |
-| `memory` | 多跳：`{hops: [[kw…]…]}`；抽取：`{facts: […]}`；更新：`{superseded: […], kept: […]}`；`must_not` | 每跳命中、全部命中；事实召回和精确率；取代是否正确；过期事实数；拒答 | lite-mem、llm-steward；LongMemEval、LoCoMo |
+| `memory` | 多跳：`{hops: [[kw…]…]}`；证据：`{relevant: [session 或 dia_id]}`；`must_not` | 每跳命中（`hop<n>`）、全部命中（`all_hops`）；证据召回（`recall@k`）；禁止内容（`must_not`）。推迟：抽取（`{facts}`）、更新（`{superseded, kept}`）等有项目要测时再做；拒答放到 E5 的模型评审（§18.23） | lite-mem；LongMemEval、LoCoMo |
 | `extraction` | `{items: […]}` | 召回优先；miss 列表；重复计数 | tenderted 类 |
 | `judging` | `{label}` | 一致率、混淆矩阵；支持“改坏”式的构造用例 | 评审模型的校准（§9） |
 | `grounded` | `{must: […], must_not: […]}` | 无依据的说法、规则遵守、是否切题（模型评审 + 规则） | RAG 写作 |
@@ -827,7 +827,7 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
   - Impeccable 完成审查：三轮。
     - 第一轮 8 组问题，前两轮之后全部解决：区间条的斜线纹理和空心点、手机宽度下结论和差值并排、趋势图的整数刻度、固定首列和滚动渐隐、用例页和归类页的信息、运行详情的版式；
     - 修复中引入的一个回归（手机宽度下页面多出 20px）也已解决；
-    - 剩一条等 owner 决定：方向说明里没有 seed，因为方向由任务指定、没有抽方向。审查规则要求 owner 明确认可这条。
+    - 最后一条（方向说明里没有 seed：方向由任务指定，没有抽方向）由 owner 在 2026-11-14 明确认可后关闭。
   - 验证：
     - 后端 pytest 328 passed（锁定版本、`CI=true`、最低声明版本三种环境）；
     - 前端：单元测试 14 条、e2e 8 条（验收流程、离线导出、主题）；
@@ -853,6 +853,47 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
       - 很小的数显示成 0（一个用例的权重、显著但很小的差值）：三位小数会舍成 0 时改用两位有效数字；
       - CI 没检查 sdist 带不带前端。
     - 不采纳 1 条："焦点在勾选框上时按 X 会切换那一行"。勾选框是 `input`，键盘守卫会忽略它，补了 `format.test.ts` 钉住这个行为。焦点在链接上时 J/K 仍然移动列表是有意为之。
+- **E4a 记忆 pack、HTTP 与子进程 Target、外部基准导入（2026-11-14，lite-eval 仓库）**：E4 分三片：E4a lite-eval 本身，E4b lite-mem 迁移（它的 S11），E4c llm-steward 迁移（它的 P8）。
+  - 做了什么（细节见 §18.23）：
+    - memory pack：`hop<n>`、`all_hops`，命中规则逐字照搬 lite-mem 的 `_has`；证据召回复用 `recall@k`，禁止内容复用已有的 `must_not`；
+    - HTTP Target（JSONPath 子集、`${ENV}` 请求头、沙箱模板）和子进程 Target（串行、不同步就重启、只重启一次、放弃后运行为 partial、stderr 进运行目录、进程组）；
+    - `lite-eval dataset import longmemeval|locomo`；`DatasetRef.license`（只加字段，旧记录照样读）；`openapi.json` 和前端 client 类型重新生成；
+    - 子进程示例 `examples/command_target.py` 和跑它的测试。
+  - 设计改动：
+    - 外部基准由"Suite 里的加载器"改为导入命令，理由见 §18.23；
+    - §18.16 的 lite-mem、llm-steward 条目按代码修正（数据规模、`follow_up` 是整次运行的参数、`.lower()` 不是 casefold、TestClient、只有不带 rerank 的一遍过门禁）；llm-steward 迁移后要另外断言没有出错的用例；
+    - §7 的 memory 行：抽取、更新推迟，拒答放到 E5（owner 2026-11-14 定）。
+  - owner 在 E4a 期间改定 E4b 的范围：LongMemEval 跑全量三个变体（S、M、oracle），不只是 S 的前 20 题。
+  - 改坏脚本：68/68 变红，跑完源码复原。过程中发现三处测试本身的问题，都已修好：
+    - runner 的串行闸门没有测试（去掉也全绿）：补了"每个回复 0.3 秒、超时 1 秒、6 个用例、concurrency 4"的测试；
+    - 去掉 Target 的锁时，并发测试会挂住而不是失败：`gather` 遇到第一个错误就返回，teardown 和仍在重启进程的调用撞在一起，留下的子进程让事件循环关不掉；改为 `return_exceptions=True`；
+    - 示例测试依赖 PATH 里有 `python`：CI 的 lowest 任务直接调用 venv 的解释器，PATH 里没有它；测试里把解释器所在目录放到 PATH 前面（示例写明在 `uv run` 下运行）。
+  - /simplify（四个审查），采纳：
+    - LoCoMo 的对话只在 `corpus/` 里存一份，不再复制进约 200 个问题；
+    - 导入时流式计算文件哈希，不把 265 MB 原文和解析结果同时留在内存；
+    - 子进程 Target 用"进行中"标记代替在四个地方设置的 `_dirty`；两个重启分支合并；`_stop` 的升级写成直线；重启后没就绪算一次退出（补了测试）；
+    - HTTP 和子进程 Target 共用 `SpecBase` / `SpecIdentity`；HTTP Target 不再自己计时（runner 已测墙钟）、只为错误信息解码回复的前 500 字节；
+    - 加载器去掉为避开循环导入而延迟的注册函数（`_common.py`）；LoCoMo 不再接收它忽略的参数；
+    - Target 的可选成员全部列在 `Target` 文档里；测试共用 `Sleeps`、`run_prepared`、`output_errors`、`demo_dataset`；记忆评分器每条记忆只 lower 一次。
+  - /simplify 不采纳：
+    - `serial` 改成 `max_concurrency: int`：还没有第二种用法；
+    - 把 `_builder` 移到 `targets/__init__.py`：`suite.py` 导入 `targets.http` / `targets.command`，会形成循环导入；
+    - 每个请求缓存用例的序列化结果：只在 `repeats > 1` 时有用，和 Target 本身的延迟比可以忽略。
+  - Codex：8 条。
+    - 采纳 5 条，都先写了失败的测试（7 个改坏全部变红）：
+      - 包装命令启动的子进程在重启和 teardown 后还活着：改为独立进程组、向组发信号。写测试时还发现 asyncio 的 `Process.wait()` 要等管道关闭才返回，继承了管道的子进程会让等待拖到它自己结束，所以测试用的子进程把标准输入输出都接到 `/dev/null`；
+      - 启动失败时留下进程：`_start` 失败先杀进程；
+      - 进程在两个用例之间退出时，下一个用例被记为失败：发送前先检查，算一次退出但把用例发给新进程（Codex 建议"不计数"不采纳：每答一题就退出的程序会无限重启）；
+      - stderr 满了以后 `[lite-eval]` 说明行也被丢掉：说明行不受上限限制；
+      - 没写 HTTP `timeout_s` 时缺少测试：补了 Suite 超时取消请求的测试。
+    - 不采纳 3 条：
+      - "runner 超时取消时要捕获 `CancelledError`"：进行中标记已保证下一个用例前重启，取消时 runner 的 `finally` 照样 teardown；
+      - "用 `has_answer` 判断 LongMemEval 的拒答题"：`has_answer` 标的是证据轮次，官方以 `_abs` 结尾的 id 标拒答题；
+      - "`[*]` 作用在空列表上应报错"：没有命中是合法的检索输出，写进了 §18.23。
+  - 验证（提交前最后一次）：
+    - 后端 ruff、format、mypy 通过；pytest 383 passed（锁定版本、`CI=true`、最低声明版本三种环境；最低版本按 CI 的方式直接调用 venv 的解释器）；
+    - `openapi.json` 是最新的；前端 typecheck、lint、单元测试 14 条、build 通过（只有生成的 client 类型变了）；
+    - 改坏脚本 68/68 变红，源码复原。
 
 ## 17. 已定的开工问题（2026-11-13）
 
@@ -1112,17 +1153,20 @@ runner 开始时会把要执行的命令或 URL 打印出来。
   - `hit@k` = `answer_rank ≤ k` 的比例；`mrr@10` = Σ(1/answer_rank) / n；`doc_hit@5` 用 `doc_rank` 算。
   - `p50` = `statistics.median`；`p95` = 最近秩法：排序后取第 `ceil(0.95·n)` 个值。
   - 按 `kind` 分组。
-- **llm-steward**（`backend/tests/eval/test_recall.py` 的 `_recall`）：
-  - 每条查询 `top_k=8`、`include_pinned=False`；
-  - 召回 = |期望的 key ∩ 返回的 key| / |期望的 key|；
+- **llm-steward**（`backend/tests/eval/test_recall.py` 的 `_recall`；E4 调查后按代码修正）：
+  - 服务在测试进程里用 `TestClient` 调用（`create_app` + 本地 fastembed MiniLM，不调用 LLM），语料经 HTTP API 写入后 `drain()`；SQLite 和 Postgres 各跑一遍。
+  - 每条查询 `POST /v1/retrieve`，`top_k=8`、`include_pinned=False`；
+  - 召回 = |期望的 key ∩ 返回的 key| / |期望的 key|，即相关集合模式的 `recall@8`；
   - 整体 = 所有查询召回的平均；召回 < 1 的查询进 miss 列表；
-  - 门禁阈值 0.92；
-  - `degraded` 不为空时，这次运行视为出错。
-- **lite-mem**（`eval/multihop.py`）：
-  - 记忆用 `infer=False` 直接写入，不调用模型；
-  - 每题检索前 k 名（默认 5，可以带 `follow_up`）；
-  - 某一跳算命中的条件：存在一条记忆，忽略大小写后包含这一跳的全部关键词；
-  - 汇总 `hop1`、`hop2`、`both` 的计数。
+  - 门禁阈值 0.92，只对不带 rerank 的一遍（基线 0.960）；带 rerank 的一遍（0.980）只报告；
+  - `degraded` 不为空时，这次运行视为出错：迁移后该用例记为 `invalid_output`，测试另外断言运行里没有出错的用例，否则一条 0 分的用例可能仍让均值过线；
+  - 不进 CI（`-m eval`），迁移后也一样。
+- **lite-mem**（`eval/multihop.py` 的 `_has` 和 `main`；E4 调查后按代码修正）：
+  - 数据 `eval/multihop.json`：2 个虚构用户（一个英文、一个中文），各 30 条记忆、10 道题，共 20 题；每题 `q`、`answer`、`hops`，没有按类型分组。
+  - 每次新建一个 SQLite 库，记忆用 `infer=False` 直接写入，不调用模型；嵌入模型是 Ollama 上的 bge-m3。
+  - 每题检索前 `top_k` 名（默认 5），`follow_up` 是整次运行的一个参数，不是每题各设；基准结果 `eval/results/2026-11-12-s10-multihop.json` 有 7 组 (top_k, follow_up)。
+  - 某一跳算命中的条件：存在一条记忆，`k.lower() in m.lower()` 对这一跳的全部关键词成立（不是 casefold，不合并空白）；对应 memory pack 的 `hop<n>`（§18.23）。
+  - 汇总 `hop1`、`hop2`、`both` 的计数；`both` 对应 `all_hops`。
   - 端到端需要 Ollama 上的 bge-m3，放在可选 marker 下；评分器等价的测试不需要模型。
 
 ### 18.17 自检的定义
@@ -1283,3 +1327,36 @@ runner 开始时会把要执行的命令或 URL 打印出来。
   - 用例列表的 `limit` 上限是 100000，不再静默截在 1000 条；
   - 前端所有查询的 key 和参数集中在 `src/data/queries.ts`。运行记录不可变，所以和运行相关的查询永不过期；只有 annotation 会让 `case`、`cases`、`dataset-cases` 这三类查询失效。
 
+
+### 18.23 记忆 pack、HTTP 与子进程 Target、外部基准（E4 定）
+
+- **memory pack**（owner 2026-11-14 定：只做有使用方的评分器）：
+  - 输出约定：`value`（或 `field` 指向的部分）是召回的记忆列表，每项是字符串，或 dict（文本在 `text` 参数指定的键下，默认 `content`）。
+  - `hop<n>`（从 1 起）和 `all_hops`，期望 `{hops: [[关键词…]…]}`。某一跳命中 = 存在一条记忆，用 `str.lower` 比较时包含这一跳的全部关键词；和 lite-mem 的 `_has` 逐字一致：不用 casefold，不合并空白，关键词分散在两条记忆里不算。每题 0 或 1（`verdict=value`），evidence 记下命中的那条记忆；均值乘题数就是 lite-mem 的计数。用例的跳数少于 n 时是评分错误，不算 0 分。
+  - 默认评分器 `hop1, hop2, all_hops`。证据召回不另写评分器：期望写 `{relevant: [session 或 dia_id]}`，用 retrieval pack 的 `recall@k`；禁止出现的内容用已有的 `must_not`。
+  - 推迟：抽取（`{facts}`）和更新（`{superseded, kept}`）等有项目要测时再做；拒答要判断答案对不对，放到 E5 的模型评审。
+- **Target 的可选成员**：runner 用 getattr 读，没有就用默认值，`targets/base.py` 的 `Target` 文档里列全：`deterministic`、`share_setup_from`（§18.18）、`serial`、`abandoned()`、`artifacts()`、`describe()`。HTTP 和子进程 Target 共用 `SpecBase`（`billing`、`versions`、`deterministic`）和 `SpecIdentity`（`versions`、`info`、`billing`、`setup_identity` 由块里的声明得出；`setup_identity` 含整个 config，所以每个 config 单独 setup，没有可共享的东西）。
+- **Suite 的 Target 写法**：`targets` 每一项恰好有 `python`、`http`、`command` 之一，加上 `configs`。config 里除 `name` 外的键：Python Target 作为关键字参数；HTTP Target 作为请求体模板的变量 `config`；子进程 Target 作为每行请求里的 `config` 字段。三种都把这些键记进 `target.config`，所以进缓存键。`billing`（默认 `unknown`，CI 模式下要写 `free` 才能跑，§18.13）、`versions`（会改变输出的版本，进缓存键）、`deterministic` 写在 `http:` / `command:` 块里。`prepare_targets` 把每个要执行的命令和要访问的 URL 打印到 stderr。
+- **HTTP Target**（§18.11 的实现）：
+  - 用 httpx2 的 `AsyncClient`，不跟随重定向；`timeout_s` 不写时只有 Suite 的 `timeout_s`。
+  - 请求头里的 `${NAME}` 在构建 Target 时从环境变量取，缺了就是配置错误（退出码 2，不调用任何东西）；记录里只有模板。
+  - 有请求体且没写 `Content-Type` 时默认 `application/json`；模板用 `SandboxedEnvironment` 和 `StrictUndefined`，变量 `case`（用例的 JSON）和 `config`；模板语法错误在构建时报配置错误，沙箱拒绝的访问记为该用例的 `exception`。
+  - JSONPath 只支持 `$`、`.key`、`[n]`（可为负）、`[*]`，比 RFC 9535 严格：`[*]` 下某一项缺键也算取不到（`invalid_output`），不悄悄少一项。`[*]` 作用在空列表上得到空列表：检索没有命中是合法的输出，不是取不到。`trace` 指向的对象按 `Trace` 校验，不合格同样是 `invalid_output`。
+  - 超时（httpx2 的 `TimeoutException`，它是 `TransportError` 的子类，所以先判断）记为 `timeout`，不重试；其他传输错误按 §6 重试。
+  - 延迟用 runner 的墙钟（成功和失败都一样），回复的 `trace` 里自带 `latency_ms` 时用它的。
+- **子进程 Target**（§18.11 的实现）：
+  - `cwd` 相对 Suite 文件所在目录，不写时是使用方的仓库根（和 Python Target 的导入根相同）；记录里是 Suite 里写的值，不是解析后的本机路径。`env_allow` 默认 `[PATH]`。
+  - Target 声明 `serial = True`，runner 对它一次只发一个用例：否则 `concurrency=4` 时排队等锁的用例会把自己的超时耗在等待上。Target 自己也有锁。
+  - 回复可以带 `error: {kind, message}`，程序用它报告自己的失败（例如模型回复被截断）。
+  - 不同步就重启：一个用例从写出请求到读回并核对完回复之间算"进行中"；以其他方式结束（超时、回复不是 JSON、`case_id`/`repeat` 不符、一行超长），stdout 可能和请求错位，下一个用例前重启进程。这些重启不计入"中途退出只重启一次"。重启直接 kill 旧进程，不等待；重启后没有就绪算一次退出。
+  - 进程组：用 `start_new_session` 启动，重启和 teardown 向整个进程组发信号，结束后再对组发一次 SIGKILL 清理剩下的子进程；否则包装命令（`uv run python x.py`）被杀后，它启动的进程还在。注意 asyncio 的 `Process.wait()` 要等进程退出**且**管道全部关闭才返回：子进程继承了管道时，等待会一直持续到它结束。
+  - 启动失败（超时、第一行不是 ready）时先杀掉进程再报错：setup 失败的 Target 不会进 runner 的 teardown 列表，不清理就会留下进程。
+  - 用例之间退出：发请求前发现进程已经退出，同样算一次退出（计入只重启一次），但这个用例还没发出，所以发给重启后的进程，不记为失败。退出时机正好卡在发送前后的，仍按中途退出处理。
+  - 中途退出：当前用例记为 `exception`，下一个用例前重启；第二次退出后 Target 放弃，剩下的用例记为 `exception`（"not run"），可选方法 `abandoned()` 返回原因，runner 把运行标为 `partial` 并加警告 `target_abandoned`。
+  - stderr 最多保留 5 MB，超出的字节数写在末尾；`[lite-eval]` 开头的说明行不受上限限制（条数少、行短，但说明了进程发生了什么）；重启、终止都在里面记一行 `[lite-eval] …`。可选方法 `artifacts()` 返回 `{文件名: 文本}`，runner 用本次运行的脱敏规则处理后写进运行目录（在 `run.json` 之前；不能和记录文件同名）。
+- **外部基准**（改动：§16 写的是"加载器"，实现为导入命令，不是 Suite 里的新写法）：`lite-eval dataset import longmemeval|locomo <官方文件> <新目录> [--limit N] [--include-abstention] [--name]` 把官方文件写成普通的数据集目录（`--include-abstention` 只用于 LongMemEval）。这样哈希、密钥扫描、`rescore` 和 Viewer 按哈希找用例内容都不用改；如果放在 Suite 里加载，Viewer 找不到这些用例。
+  - `dataset.yaml` 记 `license` 和 `source: {name, url, file, sha256}`（官方文件的 sha256，从文件流式计算，不在内存里多留一份原文），`version` 是文件 sha256 的前 12 位（带 `--limit` 时加 `+firstN`），`description` 写明截取和跳过了什么。`DatasetRef.license`（E4 加的字段）把许可证带进每条运行记录。
+  - 导入先在旁边的临时目录写完再改名，失败不留半个目录；目标目录已存在就拒绝。
+  - **LongMemEval**（MIT）：每题一个用例，id 是 `question_id`；输入 `{question, question_date, sessions: [{id, date, turns: [{role, content}]}]}`（`has_answer` 是标签，不给被测系统）；期望 `{relevant: answer_session_ids, answer}`（数字答案转成文本）；标签 `question_type`。`_abs` 结尾的拒答题默认跳过（和官方检索评测一致），保留时加标签 `abstention: "true"`。`--limit` 按文件顺序取前 N 个保留的问题。
+  - **LoCoMo**（**CC BY-NC 4.0**：不得商用，须署名）：每段对话只写一次，放在 `corpus/<sample_id>.json`（说话人、按编号排序的 session，轮次原样保留，含 `dia_id`）；每个问答一个用例，id 是 `<sample_id>:q<nnn>`，输入 `{question, conversation: <sample_id>}`，Target 在 `setup` 里从 `dataset.corpus_dir` 读对话。把对话复制进它的约 200 个问题，每次运行都要把它哈希、扫描、发送 200 遍（E4a /simplify 发现）。期望 `{relevant: evidence, answer}`。类别 5 没有正确答案：`answer` 为空，陷阱答案单独放在 `adversarial_answer`，不当作答案。标签 `category` 只用原始编号，官方没有写明各编号的含义。
+  - 测试只用 `tests/data/loaders/` 里手写的虚构样例（格式照官方文件），不提交官方数据。

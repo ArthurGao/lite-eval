@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 if TYPE_CHECKING:
+    from lite_eval.datasets.local import Dataset
     from lite_eval.runner import RunOptions, RunResult
     from lite_eval.targets.base import Target
     from lite_eval.targets.fake import FakeTarget
@@ -123,3 +124,46 @@ def write_static(directory: Path, js: str = "console.log(1)") -> Path:
     (directory / "assets" / "index-abc123.js").write_text(js)
     (directory / "assets" / "index-def456.css").write_text("body{color:#111}")
     return directory
+
+
+class Sleeps:
+    """RunOptions.sleep that records backoffs instead of waiting."""
+
+    def __init__(self) -> None:
+        self.calls: list[float] = []
+
+    async def __call__(self, seconds: float) -> None:
+        self.calls.append(seconds)
+
+
+def run_prepared(path: Path, sleeps: Sleeps | None = None) -> "RunResult":
+    """Load a suite file, build its targets as `lite-eval run` does, run its one config."""
+    import asyncio
+
+    from lite_eval.datasets.local import load_dataset
+    from lite_eval.runner import RunOptions, execute, prepare_targets
+    from lite_eval.suite import load_suite
+
+    suite = load_suite(path)
+    options = RunOptions(sleep=sleeps or Sleeps())
+    (result,) = asyncio.run(
+        execute(suite, load_dataset(suite.dataset_path), prepare_targets(suite), options)
+    )
+    return result
+
+
+def output_errors(result: "RunResult") -> dict[str, tuple[str, str] | None]:
+    """case id -> (error kind, message) of each stored output, None when it succeeded."""
+    from lite_eval.store import load_run
+
+    return {
+        o.case_id: (o.error.kind, o.error.message) if o.error else None
+        for o in load_run(result.directory).outputs
+    }
+
+
+def demo_dataset(root: Path) -> "Dataset":
+    """The default demo dataset, loaded: for calling a target's setup directly."""
+    from lite_eval.datasets.local import load_dataset
+
+    return load_dataset(write_dataset(root / "datasets" / "demo", DEFAULT_CASES))

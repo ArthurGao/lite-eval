@@ -133,6 +133,7 @@ class DatasetRef(_Record):
     hash: str
     pack: str | None = None
     synthetic: bool = False
+    license: str | None = None  # E4: an imported benchmark's terms travel with its runs
 
 
 Verdict = Literal["value", "separate", "none"]

@@ -20,6 +20,8 @@ from lite_eval.canonical import sha256_hex
 from lite_eval.contracts import GateSpec
 from lite_eval.errors import ConfigError
 from lite_eval.packs import get_pack
+from lite_eval.targets.command import CommandSpec
+from lite_eval.targets.http import HttpSpec
 
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 
@@ -35,8 +37,19 @@ class _Spec(BaseModel):
 
 
 class TargetSpec(_Spec):
-    python: str
+    """One `targets:` entry: exactly one access method, and its configs (design §18.23)."""
+
+    python: str | None = None
+    http: HttpSpec | None = None
+    command: CommandSpec | None = None
     configs: list[dict[str, JsonValue]] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _one_method(self) -> "TargetSpec":
+        given = [m for m in ("python", "http", "command") if getattr(self, m) is not None]
+        if len(given) != 1:
+            raise ValueError(f"a target needs exactly one of python, http, command; got {given}")
+        return self
 
     @field_validator("configs")
     @classmethod

@@ -6,7 +6,7 @@ A directory without run.json is a run in progress (or a crashed one) and is neve
 
 import re
 import secrets
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,13 +28,28 @@ def _jsonl(records: Iterable[BaseModel]) -> str:
     return "".join(r.model_dump_json() + "\n" for r in records)
 
 
+_RECORD_FILES = {"outputs.jsonl", "scores.jsonl", "run.json"}
+
+
 def write_run(
-    runs_dir: Path, record: RunRecord, outputs: Sequence[Output], scores: Sequence[Score]
+    runs_dir: Path,
+    record: RunRecord,
+    outputs: Sequence[Output],
+    scores: Sequence[Score],
+    artifacts: Mapping[str, str] | None = None,
 ) -> Path:
+    """run.json is written last: a directory without it is not a finished run. `artifacts` are
+    extra text files a target leaves (e.g. `target.stderr.log`), already redacted."""
+    artifacts = artifacts or {}
+    for name in artifacts:
+        if name in _RECORD_FILES or not _SEGMENT.match(name):
+            raise ValueError(f"invalid artifact name {name!r}")
     directory = runs_dir / record.suite.name / record.run_id
     directory.mkdir(parents=True, exist_ok=False)
     atomic_write(directory / "outputs.jsonl", _jsonl(outputs))
     atomic_write(directory / "scores.jsonl", _jsonl(scores))
+    for name, text in artifacts.items():
+        atomic_write(directory / name, text)
     atomic_write(directory / "run.json", record.model_dump_json(indent=2) + "\n")
     return directory
 

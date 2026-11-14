@@ -16,15 +16,7 @@ from lite_eval.store import load_run
 from lite_eval.suite import load_suite
 from lite_eval.targets.base import Target
 from lite_eval.targets.fake import FakeTarget, Step
-from tests.helpers import DEFAULT_CASES, write_suite
-
-
-class Sleeps:
-    def __init__(self) -> None:
-        self.calls: list[float] = []
-
-    async def __call__(self, seconds: float) -> None:
-        self.calls.append(seconds)
+from tests.helpers import DEFAULT_CASES, Sleeps, write_suite
 
 
 def run(

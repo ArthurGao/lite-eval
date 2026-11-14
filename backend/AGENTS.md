@@ -16,10 +16,13 @@ backend/
     errors.py                 # ConfigError (exit 2), RunError (exit 3)
     config.py                 # pydantic-settings, prefix LITE_EVAL_, no field aliases (design §3 L28)
     suite.py                  # suite YAML and the evaluation root (design §18.20)
-    datasets/                 # local.py: dataset dir, hashes, secret scan; loaders/ (longmemeval, locomo)
-    targets/                  # base.py (protocol, errors), python.py, fake.py; http.py, command.py (E4)
-    scorers/                  # base.py, deterministic.py, compose.py, ranking.py (hit/mrr/ndcg@k); judge.py (E5)
-    packs/                    # __init__.py: registry (retrieval); cost.py comes with every run
+    datasets/                 # local.py: dataset dir, hashes, secret scan; loaders/: `dataset import` of
+                              # LongMemEval and LoCoMo into dataset dirs (design §18.23)
+    targets/                  # base.py (protocol, errors), python.py, fake.py, http.py + jsonpath.py,
+                              # command.py (subprocess: serial, restarts, stderr artifact; §18.11, §18.23)
+    scorers/                  # base.py, deterministic.py, compose.py, ranking.py (hit/mrr/ndcg@k),
+                              # memory.py (hop<n>, all_hops); judge.py (E5)
+    packs/                    # __init__.py: registry (retrieval, memory); cost.py comes with every run
     cache.py                  # output cache (design §18.5)
     runner.py                 # two-phase execution (design §6)
     store.py  index.py        # run directories (truth) and the Viewer's SQLite index (rebuildable)
@@ -36,8 +39,11 @@ backend/
   tests/
     helpers.py                # dataset and suite builders under tmp_path
     data/records/v1/          # committed run directory of schema_version 1 (must keep loading)
-    unit/  integration/  e2e/ # e2e: real subprocess and HTTP targets against local fake servers
-  examples/                   # one minimal target per access method + a tiny dataset
+    data/loaders/             # hand-written samples in the LongMemEval / LoCoMo file shapes
+    data/command_target.py    # scripted subprocess target for the command-target tests
+    unit/  integration/  e2e/ # integration: real subprocess and HTTP targets against local fake
+                              # programs and servers; e2e: the Viewer fixture for Playwright
+  examples/                   # one minimal target per access method (python, command) + tiny datasets
   scripts/dump_openapi.py     # writes openapi.json, the frontend's contract (`--check` runs in pytest)
   openapi.json                # committed; regenerate after any route or response model change
 ```

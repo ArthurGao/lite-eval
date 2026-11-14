@@ -28,6 +28,17 @@ class SecretAllow(BaseModel):
     reason: str = Field(min_length=1)
 
 
+class DatasetSource(BaseModel):
+    """Where an imported dataset came from (design §18.23): the official file, by hash."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str
+    url: str
+    file: str
+    sha256: str
+
+
 class DatasetMeta(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -37,6 +48,7 @@ class DatasetMeta(BaseModel):
     description: str = ""
     license: str | None = None
     synthetic: bool = False
+    source: DatasetSource | None = None
     secret_scan_allow: list[SecretAllow] = Field(default_factory=list)
 
 
@@ -57,6 +69,7 @@ class Dataset:
             hash=self.hash,
             pack=self.meta.pack,
             synthetic=self.meta.synthetic,
+            license=self.meta.license,
         )
 
     @property

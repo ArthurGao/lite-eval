@@ -1,0 +1,48 @@
+[
+  {
+    "question_id": "q-pet-1",
+    "question_type": "single-session-user",
+    "question": "What is the name of my cat?",
+    "answer": "Miso",
+    "question_date": "2023/05/30 (Tue) 10:00",
+    "haystack_session_ids": ["s-a", "s-b"],
+    "haystack_dates": ["2023/05/20 (Sat) 09:00", "2023/05/21 (Sun) 18:30"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "I adopted a cat called Miso last week.", "has_answer": true},
+        {"role": "assistant", "content": "Congratulations on adopting Miso!"}
+      ],
+      [
+        {"role": "user", "content": "Any tips for a vegetable garden?"},
+        {"role": "assistant", "content": "Start with tomatoes and beans."}
+      ]
+    ],
+    "answer_session_ids": ["s-a"]
+  },
+  {
+    "question_id": "q-count-2",
+    "question_type": "multi-session",
+    "question": "How many trips did I plan this year?",
+    "answer": 2,
+    "question_date": "2023/06/01 (Thu) 08:00",
+    "haystack_session_ids": ["s-c", "s-d", "s-e"],
+    "haystack_dates": ["2023/02/01 (Wed) 12:00", "2023/03/11 (Sat) 12:00", "2023/04/02 (Sun) 12:00"],
+    "haystack_sessions": [
+      [{"role": "user", "content": "I am planning a trip to Kyoto.", "has_answer": true}],
+      [{"role": "user", "content": "What should I cook tonight?"}],
+      [{"role": "user", "content": "Booked a weekend in Rotorua.", "has_answer": true}]
+    ],
+    "answer_session_ids": ["s-c", "s-e"]
+  },
+  {
+    "question_id": "q-job-3_abs",
+    "question_type": "single-session-user",
+    "question": "What is the name of my dog?",
+    "answer": "You did not mention a dog.",
+    "question_date": "2023/06/02 (Fri) 08:00",
+    "haystack_session_ids": ["s-f"],
+    "haystack_dates": ["2023/05/01 (Mon) 12:00"],
+    "haystack_sessions": [[{"role": "user", "content": "My cat Miso sleeps all day."}]],
+    "answer_session_ids": ["s-f"]
+  }
+]

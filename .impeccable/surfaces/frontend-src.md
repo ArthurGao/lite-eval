@@ -33,6 +33,7 @@ FORM: Dense operator console on standard web controls. Signature move: the inter
 short horizontal range on a shared zero tick, hatched grey when it crosses zero; and the case strip — one cell per
 case, coloured by outcome, clickable into the case. Status is folded into the run marks (shown
 only when a run is not complete), not a column. seed: none (direction pinned by the brief; no concept roll
-ran, so there is no seed reference)
+ran, so there is no seed reference; the owner accepted this under new-work.md's pinned-direction rule,
+2026-11-14)
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

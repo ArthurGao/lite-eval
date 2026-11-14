@@ -1,0 +1,15 @@
+schema_version: 1
+name: capitals-command-demo
+dataset: ../datasets/capitals
+targets:
+  # A suite is trusted local configuration: it runs this command (design §18.11).
+  - command:
+      argv: [python, command_target.py]
+      cwd: ..  # relative to this file: examples/
+      billing: free
+      versions: {table: "2026-11-13"}
+    configs:
+      - {name: strict}
+      - {name: fuzzy, fuzzy: true}
+scorers:
+  - exact_match

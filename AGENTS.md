@@ -37,8 +37,9 @@ If a change must contradict the design, update the design in the same change and
 
 ## Current stage
 
-**E3 done (2026-11-14): v1 (E0–E3) complete.** Next: E4 (memory pack, HTTP / subprocess targets, lite-mem and
-llm-steward migrations; design §16).
+**E4a done (2026-11-14)**: memory pack, HTTP and subprocess targets, `dataset import` (LongMemEval, LoCoMo).
+Next: E4b (lite-mem migration, its S11; LongMemEval S / M / oracle retrieval recall), then E4c (llm-steward, its P8);
+design §16.
 
 ## Rules
 
@@ -94,6 +95,7 @@ uv run lite-eval compare <baseline run> <candidate run>
 uv run lite-eval baseline set <run>
 uv run lite-eval rescore <runs/<suite>/<run_id>> [--scorer SPEC]
 uv run lite-eval view                # http://127.0.0.1:8720
+uv run lite-eval dataset import longmemeval|locomo <official file> <new dataset dir> [--limit N]
 ```
 
 Frontend (from `frontend/`; Node 22, pnpm 10):

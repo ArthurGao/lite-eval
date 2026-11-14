@@ -418,7 +418,6 @@ def _summary(root: Path, directory: Path) -> tuple[DatasetSummary, dict[str, str
     summary = DatasetSummary(
         **d.ref.model_dump(),
         description=d.meta.description,
-        license=d.meta.license,
         n_cases=len(d.cases),
         path=directory.relative_to(root).as_posix(),
     )

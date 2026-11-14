@@ -18,6 +18,7 @@ from lite_eval.contracts import Case, Output, Score, Verdict
 from lite_eval.errors import ConfigError
 from lite_eval.scorers.base import Scorer, Spec, safe_score, spec_name
 from lite_eval.scorers.deterministic import deterministic
+from lite_eval.scorers.memory import memory_scorer
 from lite_eval.scorers.ranking import rank_scorer
 
 _COMPOSITES = ("all_of", "any_of", "weighted")
@@ -96,8 +97,11 @@ def _composite(op: str, items: Any) -> Composite:
 
 
 def _leaf(kind: str, params: dict[str, Any]) -> Scorer:
-    ranked = rank_scorer(kind, params)
-    return ranked if ranked is not None else deterministic(kind, params)
+    for family in (rank_scorer, memory_scorer):
+        scorer = family(kind, params)
+        if scorer is not None:
+            return scorer
+    return deterministic(kind, params)
 
 
 def build_scorer(spec: Any) -> Scorer:

@@ -12,6 +12,7 @@ import math
 import os
 import platform
 import subprocess
+import sys
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
@@ -52,7 +53,7 @@ from lite_eval.scorers.base import Scorer, safe_score
 from lite_eval.scorers.compose import build_scorer, parse_scorer_id
 from lite_eval.scorers.ranking import RankScorer, ranx_value
 from lite_eval.store import baseline_run, load_run, new_run_id, runs_dir, write_run
-from lite_eval.suite import Budget, Suite, load_suite
+from lite_eval.suite import Budget, Suite, TargetSpec, load_suite
 from lite_eval.targets.base import (
     Target,
     TargetError,
@@ -60,6 +61,8 @@ from lite_eval.targets.base import (
     current_repeat,
     warming_up,
 )
+from lite_eval.targets.command import CommandTarget
+from lite_eval.targets.http import HttpTarget
 from lite_eval.targets.python import build_target, load_factory
 
 Sleep = Callable[[float], Awaitable[None]]
@@ -119,6 +122,7 @@ class _Generation:
     misses: int = 0
     corrupt: int = 0
     warmup_usage: list[Usage] = field(default_factory=list)  # charged, never recorded as output
+    abandoned: str | None = None  # the target gave up running cases (design §18.11): partial
 
 
 def _error_output(
@@ -304,7 +308,10 @@ class _Generator:
         return output
 
     async def run(self) -> _Generation:
-        gate = asyncio.Semaphore(self.suite.spec.concurrency)
+        # A serial target (one subprocess) takes one case at a time: cases queued on its lock
+        # would otherwise spend their timeout waiting (design §18.11).
+        serial = getattr(self.target, "serial", False)
+        gate = asyncio.Semaphore(1 if serial else self.suite.spec.concurrency)
         jobs = [
             (c, r, *self._lookup(c, r)) for c in self.dataset.cases for r in range(self.repeats)
         ]
@@ -314,6 +321,8 @@ class _Generator:
         self.state.outputs = sorted(
             (o for o in results if o is not None), key=lambda o: (o.case_id, o.repeat)
         )
+        abandoned = getattr(self.target, "abandoned", None)
+        self.state.abandoned = abandoned() if callable(abandoned) else None
         return self.state
 
 
@@ -412,6 +421,7 @@ class _ConfigResult:
     generation: _Generation
     scores: list[Score]
     warnings: list[RunWarning]
+    artifacts: dict[str, str] = field(default_factory=dict)  # redacted files for the run dir
 
 
 @dataclass(frozen=True)
@@ -467,7 +477,7 @@ def _repeats(suite: Suite, target: Target) -> int:
 def _status(gen: _Generation) -> RunStatus:
     if not gen.outputs:
         return "failed"
-    return "partial" if gen.skipped else "complete"
+    return "partial" if gen.skipped or gen.abandoned else "complete"
 
 
 def pass_rate_scorers(scorers: Sequence[Scorer]) -> frozenset[str]:
@@ -504,6 +514,14 @@ async def _run_config(
         ctx.options,
     ).run()
     scores = score_outputs(ctx.dataset, ctx.scorers, generation.outputs, ctx.redactor)
+    collect = getattr(target, "artifacts", None)
+    raw_artifacts: dict[str, str] = collect() if callable(collect) else {}
+    artifacts = {name: ctx.redactor.text(text) for name, text in raw_artifacts.items()}
+    warnings = list(extra_warnings)
+    if generation.abandoned:
+        warnings.append(
+            _warn("target_abandoned", f"{generation.abandoned}: the cases after it were not run")
+        )
     return _ConfigResult(
         config_name=config_name,
         identity=identity,
@@ -512,9 +530,10 @@ async def _run_config(
         finished_at=datetime.now(UTC),
         generation=generation,
         scores=scores,
-        warnings=extra_warnings
+        warnings=warnings
         + _generation_warnings(ctx.suite, ctx.dataset, identity, generation)
         + _score_warnings(generation.outputs, scores),
+        artifacts=artifacts,
     )
 
 
@@ -688,20 +707,42 @@ async def execute(
     written = []
     for r in results:
         record = _record(ctx, r)
-        directory = write_run(runs_dir(suite.root), record, r.generation.outputs, r.scores)
+        directory = write_run(
+            runs_dir(suite.root), record, r.generation.outputs, r.scores, r.artifacts
+        )
         written.append(RunResult(record=record, directory=directory, scores=r.scores))
     return written
 
 
-def prepare_targets(suite: Suite, config: str | None = None) -> list[tuple[str, Target]]:
+def _builder(suite: Suite, spec: TargetSpec) -> Callable[[dict[str, Any]], Target]:
+    """How one `targets:` entry turns a config's parameters into a target (design §18.23)."""
+    if spec.python is not None:
+        factory, where = load_factory(spec.python, suite.import_root), spec.python
+        return lambda kwargs: build_target(factory, kwargs, where)
+    if spec.http is not None:
+        http = spec.http
+        return lambda kwargs: HttpTarget(http, kwargs)
+    assert spec.command is not None
+    command = spec.command
+    cwd = (suite.path.parent / command.cwd).resolve() if command.cwd else suite.import_root
+    return lambda kwargs: CommandTarget(command, kwargs, cwd)
+
+
+def prepare_targets(
+    suite: Suite, config: str | None = None, announce: Callable[[str], None] | None = None
+) -> list[tuple[str, Target]]:
+    """Build the targets; `announce` hears each command run and URL called (design §18.11)."""
     targets: list[tuple[str, Target]] = []
     for spec in suite.spec.targets:
-        factory = load_factory(spec.python, suite.import_root)
+        build = _builder(suite, spec)
         for params in spec.configs:
             name = str(params["name"])
             if config is None or name == config:
-                kwargs = {k: v for k, v in params.items() if k != "name"}
-                targets.append((name, build_target(factory, kwargs, spec.python)))
+                target = build({k: v for k, v in params.items() if k != "name"})
+                describe = getattr(target, "describe", None)
+                if announce is not None and callable(describe):
+                    announce(f"config {name}: {describe()}")
+                targets.append((name, target))
     if config is not None and not targets:
         raise ConfigError(f"no config named {config!r} in {suite.path}")
     return targets
@@ -719,6 +760,10 @@ def precheck_gate(suite: Suite, dataset: Dataset, scorers: Sequence[Scorer]) -> 
         case_hashes=dataset.case_hashes,
         baseline=base.record if base else None,
     )
+
+
+def _announce(line: str) -> None:
+    print(f"lite-eval: {line}", file=sys.stderr)
 
 
 def run_suite(
@@ -739,7 +784,7 @@ def run_suite(
     dataset = load_dataset(suite.dataset_path)
     if gate:
         precheck_gate(suite, dataset, [build_scorer(s) for s in suite.scorer_specs])
-    targets = prepare_targets(suite, config)
+    targets = prepare_targets(suite, config, announce=_announce)
     options = RunOptions(
         no_cache=no_cache, ci=ci_from_env() if ci is None else ci, crosscheck=crosscheck
     )

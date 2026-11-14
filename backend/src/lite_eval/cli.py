@@ -22,6 +22,8 @@ baseline_app = typer.Typer(
     no_args_is_help=True, help="Set the run a suite compares and gates against."
 )
 app.add_typer(baseline_app, name="baseline")
+dataset_app = typer.Typer(no_args_is_help=True, help="Import external benchmarks as datasets.")
+app.add_typer(dataset_app, name="dataset")
 
 
 def _print_version(value: bool) -> None:
@@ -148,6 +150,37 @@ def baseline_set(
     typer.echo(
         f"commit {run_dir} and {path.name} (with {BASELINE_LOG}) with the code they gate "
         "(design §17)"
+    )
+
+
+@dataset_app.command("import")
+def dataset_import(
+    loader: Annotated[str, typer.Argument(help="longmemeval or locomo.")],
+    src: Annotated[Path, typer.Argument(help="The official benchmark file (JSON).")],
+    out: Annotated[Path, typer.Argument(help="A new dataset directory to write.")],
+    limit: Annotated[
+        int | None, typer.Option(help="Only the first N questions of the file.")
+    ] = None,
+    include_abstention: Annotated[
+        bool, typer.Option(help="Keep LongMemEval's abstention (_abs) questions.")
+    ] = False,
+    name: Annotated[str | None, typer.Option(help="Dataset name (default: the loader).")] = None,
+) -> None:
+    """Write an external benchmark file as a dataset directory (design §18.23)."""
+    from lite_eval.datasets.loaders import import_dataset
+    from lite_eval.datasets.local import load_dataset
+
+    try:
+        directory = import_dataset(
+            loader, src, out, name=name, limit=limit, include_abstention=include_abstention
+        )
+        dataset = load_dataset(directory)
+    except LiteEvalError as exc:
+        _fail(exc)
+    meta = dataset.meta
+    typer.echo(
+        f"{meta.name} {meta.version}: {len(dataset.cases)} cases -> {directory} "
+        f"(license {meta.license}; {meta.description})"
     )
 
 
