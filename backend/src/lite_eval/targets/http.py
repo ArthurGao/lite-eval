@@ -9,6 +9,7 @@ JSON) and `config` (the config's parameters).
 import json
 import os
 import re
+import urllib.parse
 from typing import TYPE_CHECKING, Any, Literal
 
 import httpx2
@@ -65,11 +66,20 @@ class _Masker:
     that echoes the request (a 401 page, a debug endpoint) must not put one into a record."""
 
     def __init__(self, secrets: dict[str, str]) -> None:
+        # Each value as sent and as an error page may repeat it (JSON-escaped, URL-encoded).
         # Longest first, so a secret containing another is masked whole; empty values mask nothing.
-        self._pairs = sorted(
-            ((v, f"«redacted:env:{k}»") for k, v in secrets.items() if v),
-            key=lambda p: -len(p[0]),
-        )
+        pairs = {
+            form: f"«redacted:env:{k}»"
+            for k, v in secrets.items()
+            if v
+            for form in (
+                v,
+                json.dumps(v)[1:-1],
+                urllib.parse.quote(v, safe=""),
+                urllib.parse.quote_plus(v),
+            )
+        }
+        self._pairs = sorted(pairs.items(), key=lambda p: -len(p[0]))
 
     def text(self, value: str) -> str:
         for secret, marker in self._pairs:
@@ -179,7 +189,8 @@ class HttpTarget(SpecIdentity):
         except httpx2.TransportError as exc:
             raise TransportError(f"{type(exc).__name__}: {exc}") from exc
         if not 200 <= status < 300:
-            text = body[:500].decode("utf-8", errors="replace")
+            # Masked whole, then cut: a cut first could leave the start of a secret unmasked.
+            text = self._mask.text(body.decode("utf-8", errors="replace"))[:500]
             raise TargetError("http_status", f"HTTP {status}: {text}")
         try:
             reply = self._mask.json(json.loads(body))

@@ -3,6 +3,7 @@
 import json
 import threading
 import time
+import urllib.parse
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -59,6 +60,15 @@ def _handler(state: Server) -> type[BaseHTTPRequestHandler]:
                 return
             if self.path == "/reflect-401":
                 self._reply(401, f"bad credentials: {auth}".encode(), "text/plain")
+                return
+            echoed = {  # an error page repeating the header, cut or encoded
+                "/reflect-401-long": "x" * 485 + auth,  # straddles the 500-byte cut
+                "/reflect-401-json": json.dumps({"error": "bad credentials", "auth": auth}),
+                "/reflect-401-url": "retry at /login?auth=" + urllib.parse.quote(auth, safe=""),
+                "/reflect-401-form": "auth=" + urllib.parse.quote_plus(auth),
+            }.get(self.path)
+            if echoed is not None:
+                self._reply(401, echoed.encode(), "text/plain")
                 return
             if self.path == "/status":
                 self._reply(503, b"upstream down")
@@ -270,3 +280,27 @@ def test_a_secret_the_server_echoes_back_is_masked_before_any_record(
             "http_status",
             f"HTTP 401: bad credentials: {marker}",
         )
+
+
+@pytest.mark.parametrize(
+    "route", ["/reflect-401-long", "/reflect-401-json", "/reflect-401-url", "/reflect-401-form"]
+)
+def test_a_secret_echoed_cut_or_encoded_in_an_error_page_is_masked_too(
+    tmp_path: Path, server: tuple[str, Server], monkeypatch: pytest.MonkeyPatch, route: str
+) -> None:
+    """Security review of 69ee17f: masking after the 500-byte cut left the part of a secret
+    before the cut, and a secret JSON-escaped or URL-encoded in an error page was kept whole."""
+    url, _ = server
+    secret = 'sk-a/b"c+d=e 0123456789abcdef'  # JSON, quote and quote_plus each differ
+    monkeypatch.setenv("EVAL_TOKEN", secret)
+    path = http_suite(tmp_path, f"{url}{route}", headers={"Authorization": "Bearer ${EVAL_TOKEN}"})
+    result = run_prepared(path)
+    out = load_run(result.directory).outputs[0]
+    assert out.error is not None and out.error.kind == "http_status"
+    files = "".join(f.read_text() for f in result.directory.iterdir())
+    forms = [secret, json.dumps(secret)[1:-1], urllib.parse.quote(secret, safe="")]
+    forms.append(urllib.parse.quote_plus(secret))
+    # Even the first 6 characters: what a cut leaves; files hold the message JSON-escaped again.
+    leaked = [f[:6] for f in forms if f[:6] in files + out.error.message]
+    assert leaked == []
+    assert "«redacted:env:EVAL_TOKEN»" in out.error.message or route == "/reflect-401-long"
