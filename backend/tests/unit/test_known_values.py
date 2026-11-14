@@ -113,3 +113,29 @@ def test_stderr_kept_up_to_its_cap_drops_a_possible_secret_start_at_the_cut() ->
     target._keep(b"3456789 and more")
     assert b"tok-" not in target._stderr
     assert len(target._stderr) + target._stderr_dropped == cap - 7 + 7 + len(b"3456789 and more")
+
+
+def test_once_stderr_is_cut_nothing_more_is_kept() -> None:
+    """Security review of 412af4b: the trim made room again, and a later chunk was kept after
+    the gap (and could be cut inside a secret with no trim)."""
+    import lite_eval.targets.command as command
+    from lite_eval.targets.command import CommandSpec, CommandTarget
+
+    target = CommandTarget(CommandSpec(argv=["true"]), {}, Path("."))
+    target._known = KnownValues({"env:T": "tok-0123456789"})
+    target._keep(b"x" * (command.STDERR_CAP + 10))
+    kept = bytes(target._stderr)
+    target._keep(b"tok-0123")
+    assert bytes(target._stderr) == kept
+    assert len(kept) + target._stderr_dropped == command.STDERR_CAP + 10 + len(b"tok-0123")
+
+
+def test_entities_with_leading_zeros_are_masked_within_the_bound_used_to_cut() -> None:
+    """Security review of 412af4b: unbounded leading zeros made `longest()` no bound."""
+    secret = "/x0123456789"
+    known = KnownValues({"env:T": secret})
+    longest_form = "&#x" + "0" * 8 + "2f;x0123456789"
+    assert known.text(longest_form) == "«redacted:env:T»"
+    assert known.text("&#" + "0" * 8 + "47;x0123456789") == "«redacted:env:T»"
+    assert known.longest() >= len(longest_form.encode())
+    assert known.longest() >= len(("&#" + "0" * 8 + "1114111;").encode()) * len(secret)

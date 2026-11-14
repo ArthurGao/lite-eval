@@ -153,6 +153,10 @@ def _hex_any_case(quoted: str) -> re.Pattern[str]:
     return re.compile("".join(parts))
 
 
+_ZEROS = 8  # leading zeros accepted in a numeric entity: no encoder writes more
+_FORM_MAX = len("&#x") + _ZEROS + 7 + len(";")  # the longest form of one character, in bytes
+
+
 def _plain(c: str) -> bool:
     """A character no JSON or HTML encoder escapes."""
     return c.isascii() and c.isalnum()
@@ -174,8 +178,8 @@ def _escaped_any(value: str) -> re.Pattern[str]:
         alts = {
             re.escape(c),
             "".join(r"\\u" + _any_case(f"{u:04x}") for u in units),
-            f"&#0*{cp};",
-            "&#[xX]0*" + _any_case(f"{cp:x}") + ";",
+            f"&#0{{0,{_ZEROS}}}{cp};",
+            f"&#[xX]0{{0,{_ZEROS}}}" + _any_case(f"{cp:x}") + ";",
         }
         for escaped in (json.dumps(c)[1:-1], html.escape(c), "\\/" if c == "/" else ""):
             if escaped and escaped != c:
@@ -211,9 +215,10 @@ class KnownValues:
         return sorted(n for n, v in self._set.items() if len(v) < SHORT_SECRET)
 
     def longest(self) -> int:
-        """An upper bound on the length of any form of any value (a surrogate-pair escape is 12
-        characters for one character): how much of a cut text may be the start of a secret."""
-        return max((12 * len(v) for v in self._set.values()), default=0)
+        """An upper bound, in UTF-8 bytes, on any form of any value: how much of a cut text may
+        be the start of a secret. Per character at most `_FORM_MAX` (an entity with the most
+        leading zeros, `&#x00000000` + 6 hex digits + `;`, or 7 decimal digits)."""
+        return max((_FORM_MAX * len(v) for v in self._set.values()), default=0)
 
     @cached_property
     def _forms(self) -> tuple[tuple[str | re.Pattern[str], str], ...]:

@@ -145,10 +145,13 @@ class CommandTarget(SpecIdentity):
         self._stderr += f"[lite-eval] {text}\n".encode()
 
     def _keep(self, chunk: bytes) -> None:
+        if self._stderr_dropped:  # cut once: nothing more is kept, whatever room the trim left
+            self._stderr_dropped += len(chunk)
+            return
         room = max(STDERR_CAP - len(self._stderr), 0)
         self._stderr += chunk[:room]
         dropped = max(len(chunk) - room, 0)
-        if dropped and not self._stderr_dropped:  # the cut, wherever a chunk ended before it:
+        if dropped:  # the cut, wherever a chunk ended before it:
             tail = min(self._known.longest(), len(self._stderr))  # what it keeps last may be
             del self._stderr[len(self._stderr) - tail :]  # the start of a secret
             dropped += tail
