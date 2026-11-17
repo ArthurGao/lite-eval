@@ -449,7 +449,7 @@ class Scorer(Protocol):
 - **结构化输出**：评审返回 `{verdict, score, reason, evidence}`，由 pydantic 校验；解析失败记为评分错误，不算通过。
 - **提示词**放在 `backend/src/lite_eval/prompts/*.j2`，不写成内联字符串。
 - **测试**：用 fake 评审；真实模型只在可选的 marker（`-m ollama`）下运行。
-- **落地（E5a）**：调用、校准检查、异步评分、费用、KB 导出的精确规格见 §18.24。"正式 Suite" = 带门禁的 Suite：没校准的评审照样能跑（探索、看真实输出的标记率），但运行带 `judge_uncalibrated` 警告，门禁拒绝依赖它。
+- **落地（E5a）**：调用、校准检查、异步评分、费用、KB 导出的精确规格见 §18.24。"正式 Suite" = 带门禁的 Suite：没校准的评审照样能跑（探索、看真实输出的标记率），但运行带 `judge_uncalibrated` 警告，读它的指标的门禁规则被拒绝（owner 2026-11-18 定：同一个 Suite 里的其他规则照常）。
 
 ## 10. Viewer（前端）
 
@@ -945,7 +945,7 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
     - 构造工具没做"加一句禁用语"：那由 `must_not` 规则判，不是 grounded 评审的标签。
     - 评审不能放进组合评分器（组合是同步的，评审的分数也要单独看得到）。
   - /simplify（四个审查）采纳：评审调用和身份各只剩一份（`Rubric.ask`、`Rubric.identity`，校准时评审看到的提示词和使用时相同）；校准检查挪进 `judges/calibration.py`，写法在构建评分器时校验，只读 `run.json`；runner 里评审的开关、密钥、计数合成一个 `judging()` 上下文管理器；并发名额只在调用期间占用（预算检查、调用、记账在同一个名额里，退避在外面）；确定性评分器不建任务；模板只读一次、编译一次；key 用 `resolve_env`，`secrets` 进 `JudgeClient` 协议；只在出错时遮盖回复；`_Ledger.charge`、`scorer_raised` 共用；删掉没用的 `is_judge` 和 schema 里没有的 `Verdict.score`；`KbSpec` 用 KB 的取值做类型、挪到 `suite.py`，写错在加载 Suite 时就报错；导出只读记录。不采纳：生成和评审共用一个重试函数（要改已有的生成代码，两边记录的错误种类不同，留到 E7）；评审客户端和 HTTP Target 共用请求函数（遮盖时机不同）；评审的 `_sources` 和 extraction 的 `_items` 合并（会让 `judges/` 依赖 `scorers/`）；评审客户端按 Suite 只开一次（每个配置多几次握手，可以忽略）；混淆矩阵进 Viewer 和 HTML（前端的事，以后做）。
-  - /simplify 提出、留给 owner 定：门禁现在只要有一个没校准的评审就整个拒绝（按 §9 和计划"正式 Suite = 带门禁"）；审查建议只拒绝读这个评审指标的规则，让探索性的评审能和已有的确定性门禁放在同一个 Suite 里。
+  - /simplify 提出、owner 定（2026-11-18）：原先只要有一个没校准的评审，整个门禁都拒绝；改为只拒绝读这个评审指标的规则，探索性的评审可以和已有的确定性门禁放在同一个 Suite 里（先写了失败的测试；改坏脚本 45/45 变红）。
   - Codex：采纳 2 条，各先写失败的测试——评审调用不计入 `budget.max_calls`（改为每次调用都记进共用的账本）；`min_agreement` 接受 `-1`、`NaN`、`1.5`（改为必须是 0 到 1 的数）。不采纳 1 条："评审 Target 的身份不含 `base_url`，换一台服务器会用到缓存的结论"：身份不含主机是有意的（§18.24，同一个模型在另一台机器上是同一件仪器）；真正的缺口是模型标签不钉住 digest，在同一台机器上 `ollama pull` 之后一样存在，要重新判就用 `--no-cache`。
   - 改坏脚本：41/41 变红，源码复原。第一轮有 3 处没变红（不合格回复的费用不计入预算、提示词版本不进身份、引用列表 `[1, 3, 5]` 中间的数字被当成数字），补了测试；/simplify 之后又补了"部分完成的校准运行不算数"。另：改坏脚本把 `==` 换成 `!=`（同样长度）并在同一秒内复原时，Python 的字节码缓存按修改时间和大小判断，留下了改坏的 `.pyc`，之后的测试莫名失败；脚本改为 `PYTHONDONTWRITEBYTECODE=1`。
   - 提交后的安全审查（`d4413d0`）：两条都成立，先写失败的测试——`JudgeTarget.info()` 把 `base_url` 原样写进运行记录，URL 里的用户信息或查询参数可能带着密钥：只留 scheme、主机、端口和路径；`rescore` 会重新调用评审，却没走 CI 计费守卫：没传 options 时按 `CI` 环境变量判断，调用前同样拒绝非 free 的评审。改坏脚本 44/44 变红。
@@ -1453,7 +1453,7 @@ runner 开始时会把要执行的命令或 URL 打印出来。
 - **校准**：
   - 校准运行 = 一次 `judging` pack 的运行，Target 是 `lite_eval.judges.target:judge_target`（`JudgeTarget`），config 就是评审的身份；用例 `input` 是评审看到的内容，`expected: {label}`，构造的用例带标签 `construction`。评审回复不合格时这个用例记为 `invalid_output`。
   - 评分器写 `calibration: {run: <相对评测根目录的运行目录>, min_agreement}`（写法在构建评分器时就校验）。运行前、调用任何东西之前由 `judges/calibration.py` 检查（只读 `run.json`）：评分器和校准 Target 的身份都来自同一个 `Rubric.identity`，调用都走 `Rubric.ask`，所以校准时评审看到的提示词和使用时相同；运行存在；它是 judging 运行（Target 是 `judge`，有 `label_agreement`）；它的 config 和现在评审的身份逐项相同（报错列出第一处不同，例如 `think False -> True`）；状态是 `complete`；一致率 ≥ `min_agreement`。任何一项不满足都是配置错误（退出码 2）。
-  - 没写 `calibration`：运行带警告 `judge_uncalibrated`，`ScorerRef.calibrated = false`；门禁拒绝（配置错误），不管门禁规则看的是不是这个评审。
+  - 没写 `calibration`：运行带警告 `judge_uncalibrated`，`ScorerRef.calibrated = false`；读这个评审指标（或它的 `:pass_rate`）的门禁规则是配置错误，Suite 里的其他规则照常判，所以探索性的评审可以和已有的门禁放在一起（owner 2026-11-18 定；原先是只要有没校准的评审就整个门禁都拒绝）。
   - 终端报告对 judging 运行列出混淆矩阵（期望 → 判定：个数），从分数的 evidence 算出（`analysis/judging.confusion`），不加契约字段。
 - **构造工具**（`judges/construct.py`，方法论 §2）：`change_number`（随机选一个数字改掉，引用编号不算数字）、`swap_answer`、`insert_sentence`、`append_section` → `unsupported`；`drop_citations` → `grounded`（grounded 规则不评引用标记）。选择都用调用方给的 `random.Random`，同一个种子得到同一个校准集。计划里的"加一句禁用语"没做：那是 `must_not` 规则管的，不是 grounded 评审的标签。
 - **extraction pack**：输出是条目列表（或 `{items: [...]}`），每项是字符串或 `{text}`；期望 `{items: [...]}`。`item_recall`：期望条目在某个输出条目里出现（和 `contains` 一样合并空白、默认不分大小写），evidence 列出漏掉的；`item_duplicates`：重复条目占输出条目的比例（越低越好），evidence 列出重复的。

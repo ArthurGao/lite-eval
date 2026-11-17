@@ -56,16 +56,18 @@ def gate_problems(
     baseline: RunRecord | None,
 ) -> None:
     """Raise ConfigError for a gate that cannot be evaluated (design §18.3, §18.4)."""
-    for ref in scorers:
-        if ref.calibrated is False:
-            raise ConfigError(
-                f"judge {ref.name} is not calibrated: a gate cannot rely on it (design §9); "
-                "name its calibration run"
-            )
     known = gate_metrics(scorers)
+    uncalibrated = {s.name for s in scorers if s.calibrated is False}
     for rule in spec.rules:
         if rule.metric not in known:
             raise ConfigError(f"gate metric {rule.metric!r} is not scored; known: {sorted(known)}")
+        # Only a rule reading an uncalibrated judge's own metric is refused (design §9, §18.24):
+        # the suite's other rules stay usable next to an exploratory judge.
+        if rule.metric.removesuffix(PASS_RATE) in uncalibrated:
+            raise ConfigError(
+                f"judge {rule.metric} is not calibrated: a gate cannot rely on it (design §9); "
+                "name its calibration run"
+            )
     if not spec.relative:
         return
     if baseline is None:

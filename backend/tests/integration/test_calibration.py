@@ -272,3 +272,18 @@ def test_a_judge_target_keeps_no_credentials_or_query_from_its_url() -> None:
         rubric="grounded", **{**JUDGE, "base_url": "http://user:pw-123@127.0.0.1:1/v1?key=k#f"}
     )
     assert target.info() == {"base_url": "http://127.0.0.1:1/v1"}
+
+
+def test_an_uncalibrated_judge_leaves_the_suite_s_other_gate_rules_usable(tmp_path: Path) -> None:
+    """Only a rule reading the judge's own metric needs a calibration (design §18.24): an
+    exploratory judge can sit next to a suite's existing gate."""
+    from lite_eval.api import assert_gate, gate_results
+
+    (result,) = judged(tmp_path / "a", None, gate=[{"metric": "errors", "max": 0}])
+    assert result.record.scorers[0].calibrated is False
+    (outcome,) = gate_results([result])
+    assert outcome.passed and outcome.applied == 1
+    judge_rule = {"metric": '{"judge":{"rubric":"grounded"}}', "min": 0.5}
+    mixed = [{"metric": "errors", "max": 0}, judge_rule]
+    with pytest.raises(ConfigError, match="not calibrated"):
+        assert_gate(judged(tmp_path / "b", None, gate=mixed))
