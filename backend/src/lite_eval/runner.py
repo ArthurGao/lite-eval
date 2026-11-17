@@ -1017,7 +1017,8 @@ def rescore_run(
     texts = list(scorer_specs) if scorer_specs else [s.name for s in rec.scorers]
     scorers = [build_scorer(parse_scorer_id(t), suite.spec.judges) for t in texts]
     check_calibrations(suite, scorers)
-    opts = options or RunOptions()
+    opts = options or RunOptions(ci=ci_from_env())
+    _ci_guard(suite, [], opts.ci, scorers)  # re-judging is a call like judging (§18.13)
 
     async def rescore() -> tuple[list[Score], int, int]:
         async with judging(suite, scorers, opts, _Ledger(suite.spec.budget)) as judges:

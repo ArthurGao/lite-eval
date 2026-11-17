@@ -948,6 +948,7 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
   - /simplify 提出、留给 owner 定：门禁现在只要有一个没校准的评审就整个拒绝（按 §9 和计划"正式 Suite = 带门禁"）；审查建议只拒绝读这个评审指标的规则，让探索性的评审能和已有的确定性门禁放在同一个 Suite 里。
   - Codex：采纳 2 条，各先写失败的测试——评审调用不计入 `budget.max_calls`（改为每次调用都记进共用的账本）；`min_agreement` 接受 `-1`、`NaN`、`1.5`（改为必须是 0 到 1 的数）。不采纳 1 条："评审 Target 的身份不含 `base_url`，换一台服务器会用到缓存的结论"：身份不含主机是有意的（§18.24，同一个模型在另一台机器上是同一件仪器）；真正的缺口是模型标签不钉住 digest，在同一台机器上 `ollama pull` 之后一样存在，要重新判就用 `--no-cache`。
   - 改坏脚本：41/41 变红，源码复原。第一轮有 3 处没变红（不合格回复的费用不计入预算、提示词版本不进身份、引用列表 `[1, 3, 5]` 中间的数字被当成数字），补了测试；/simplify 之后又补了"部分完成的校准运行不算数"。另：改坏脚本把 `==` 换成 `!=`（同样长度）并在同一秒内复原时，Python 的字节码缓存按修改时间和大小判断，留下了改坏的 `.pyc`，之后的测试莫名失败；脚本改为 `PYTHONDONTWRITEBYTECODE=1`。
+  - 提交后的安全审查（`d4413d0`）：两条都成立，先写失败的测试——`JudgeTarget.info()` 把 `base_url` 原样写进运行记录，URL 里的用户信息或查询参数可能带着密钥：只留 scheme、主机、端口和路径；`rescore` 会重新调用评审，却没走 CI 计费守卫：没传 options 时按 `CI` 环境变量判断，调用前同样拒绝非 free 的评审。改坏脚本 44/44 变红。
   - 验证（提交前最后一次）：ruff、format、mypy 通过；pytest 515 passed（锁定版本、`CI=true`、最低声明版本三种环境）；`-m kb` 用 KB 自己的 `check.mjs` 通过；`-m ollama` 和 qwen3:8b 真实往返通过（之后 Ollama 已停）；前端 typecheck、lint、test（14）、build、e2e（8）通过。
 
 ## 17. 已定的开工问题（2026-11-13）
@@ -1447,7 +1448,7 @@ runner 开始时会把要执行的命令或 URL 打印出来。
 - **回复**：按规则的 schema 校验 `{verdict, reason, evidence}`（§9 写的 `score` 没放进 schema：结论是二值的，评分器的分数由结论得出），`verdict` 只能取规则列出的值；不合格记为评分错误 `invalid_judge_output`，原始回复保留在 `JudgeRecord.raw`。`Score.value` = 1（结论等于规则的 `passing`）或 0，`verdict=value`；evidence 是 `{verdict, evidence}`。`JudgeRecord` 加了 `think`、`usage`（只加字段）。
 - **异步评分**：评分阶段变成 `ascore_outputs`；确定性评分器照旧同步算（不建任务），评审调用并发，并发数 = Suite 的 `concurrency`（预算检查、调用和记账在同一个名额里，退避在名额外，免得等重试的调用占着名额），每次调用的超时是 Suite 的 `judge_timeout_s`（默认 120）。预算账本把评审的费用一起算，超了以后剩下的评审不再调用，记为评分错误，运行标为 `partial`。被测系统本身出错的输出不送去评审（它已经按 §18.8 计为失败）。
 - **费用**：`CostSummary` 加 `judge_calls`、`judge_input_tokens`、`judge_output_tokens`、`judge_reasoning_tokens`、`judge_cost_usd`，和被测系统的费用分开；终端报告有一行 `judges: …`。CI 计费守卫（§18.13）同样管评审：不是 `free` 的评审在 CI 里拒绝运行。
-- **评审结果不缓存**：本阶段不做；缓存键要含输出内容，等确实有重复开销再加。`rescore` 会重新评审已存的输出（会调用评审，从不调用被测系统），用 Suite 现在的 `judges` 和预算。
+- **评审结果不缓存**：本阶段不做；缓存键要含输出内容，等确实有重复开销再加。`rescore` 会重新评审已存的输出（会调用评审，从不调用被测系统），用 Suite 现在的 `judges` 和预算，CI 计费守卫同样适用（没传 options 时按 `CI` 环境变量判断）。校准 Target 记进 `info` 的 `base_url` 去掉用户信息、查询和片段。
 - **组合**：评审不能放进 `all_of` / `any_of` / `weighted`（配置错误）：组合是同步的，而且一个评审的分数要单独看得到。
 - **校准**：
   - 校准运行 = 一次 `judging` pack 的运行，Target 是 `lite_eval.judges.target:judge_target`（`JudgeTarget`），config 就是评审的身份；用例 `input` 是评审看到的内容，`expected: {label}`，构造的用例带标签 `construction`。评审回复不合格时这个用例记为 `invalid_output`。

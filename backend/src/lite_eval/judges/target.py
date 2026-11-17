@@ -12,6 +12,7 @@ In a suite: `python: lite_eval.judges.target:judge_target` with configs such as
 
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal
+from urllib.parse import urlsplit, urlunsplit
 
 from lite_eval import __version__
 from lite_eval.contracts import Case, Output, Trace
@@ -53,7 +54,14 @@ class JudgeTarget:
         return {"lite-eval": __version__}
 
     def info(self) -> dict[str, str]:
-        return {"base_url": self.spec.base_url}
+        """Recorded in every run: the endpoint without userinfo, query or fragment, which can
+        carry a key (design §18.12)."""
+        url = urlsplit(self.spec.base_url)
+        host = url.hostname or ""
+        netloc = f"[{host}]" if ":" in host else host
+        if url.port is not None:
+            netloc += f":{url.port}"
+        return {"base_url": urlunsplit((url.scheme, netloc, url.path, "", ""))}
 
     def billing(self) -> Literal["free", "subscription", "per_token", "unknown"]:
         return self.spec.billing

@@ -263,3 +263,12 @@ def test_a_partial_calibration_run_vouches_for_nothing(tmp_path: Path) -> None:
 def test_a_threshold_outside_zero_to_one_is_a_config_error(tmp_path: Path, bad: Any) -> None:
     with pytest.raises(ConfigError, match="min_agreement must be a number from 0 to 1"):
         judged(tmp_path, {"run": "runs/x", "min_agreement": bad})
+
+
+def test_a_judge_target_keeps_no_credentials_or_query_from_its_url() -> None:
+    """`info()` goes into every run record (design §18.12): userinfo and a query string can
+    carry a key, so only scheme, host, port and path are kept."""
+    target = JudgeTarget(
+        rubric="grounded", **{**JUDGE, "base_url": "http://user:pw-123@127.0.0.1:1/v1?key=k#f"}
+    )
+    assert target.info() == {"base_url": "http://127.0.0.1:1/v1"}

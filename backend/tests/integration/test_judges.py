@@ -300,3 +300,19 @@ def test_judge_calls_count_against_the_suite_s_max_calls(tmp_path: Path) -> None
     kinds = sorted(str(s.error.kind if s.error else "ok") for s in scores(result).values())
     assert kinds == ["judge_call_failed", "judge_call_failed", "ok"]
     assert result.record.cost.judge_calls == 1 and result.record.status == "partial"
+
+
+def test_rescore_in_ci_refuses_a_judge_not_declared_free(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Re-judging is a paid call like the first judging: the CI guard covers rescore too, whether
+    CI mode comes from the options or from `CI=true` (the CLI passes no options)."""
+    paid = {**JUDGE, "billing": "per_token"}
+    first = run(tmp_path, Judges(), judges={"grounded": paid})
+    judges = Judges()
+    with pytest.raises(ConfigError, match=r"CI mode refuses .*judge grounded \(per_token\)"):
+        rescore_run(first.directory, options=RunOptions(judge_factory=judges, ci=True))
+    assert judges.made == []
+    monkeypatch.setenv("CI", "true")
+    with pytest.raises(ConfigError, match=r"CI mode refuses .*judge grounded"):
+        rescore_run(first.directory)  # would otherwise reach the (unreachable) judge endpoint
