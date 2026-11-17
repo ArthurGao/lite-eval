@@ -16,7 +16,8 @@ dependencies = [
     "typer>=0.19,<1",
     "jinja2>=3.1,<4",
     "pyyaml>=6.0.1,<7",  # 6.0 has no Python 3.12 wheel and does not build
-    # httpx2, not httpx: the openai SDK (judges, E5) and mcp already run on httpx2; one HTTP client per process.
+    # httpx2, not httpx: the HTTP targets and the model judges (E5) call through it, and the openai
+    # SDK and mcp run on it; one HTTP client per process.
     "httpx2>=2.16,<3",
     # Paired bootstrap for comparisons (design §18.2): 10 000 resamples need vectorised sums.
     "numpy>=2.0,<3",
@@ -34,10 +35,6 @@ server = [
 ranking = [
     "ranx>=0.3.21,<0.4",
     "scipy>=1.13,<2",
-]
-# Model judges through an OpenAI-compatible endpoint (E5).
-judge = [
-    "openai>=3.46,<4",
 ]
 
 [project.scripts]
@@ -90,7 +87,8 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 # Opt-in, deselected by default: `-m ollama` (real local models on 127.0.0.1:11434).
-addopts = "-m 'not ollama'"
+addopts = "-m 'not ollama and not kb'"
 markers = [
     "ollama: uses a real local model through Ollama (opt-in: uv run pytest -m ollama)",
+    "kb: checks against the owner's knowledge base and node (opt-in: uv run pytest -m kb)",
 ]

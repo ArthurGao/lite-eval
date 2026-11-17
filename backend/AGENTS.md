@@ -9,7 +9,7 @@ Design: `docs/lite-eval-design.md` §5 (contracts), §6 (runner), §7 (packs), �
 
 ```
 backend/
-  pyproject.toml              # uv; extras: [server] (fastapi, uvicorn), [ranking] (ranx, scipy), [judge] (openai)
+  pyproject.toml              # uv; extras: [server] (fastapi, uvicorn), [ranking] (ranx, scipy); judges use httpx2
   src/lite_eval/
     canonical.py              # canonical JSON + sha256 (design §18.6); every hash goes through it
     contracts.py              # every contract, pydantic, schema_version; imports only canonical
@@ -20,9 +20,14 @@ backend/
                               # LongMemEval and LoCoMo into dataset dirs (design §18.23)
     targets/                  # base.py (protocol, errors), python.py, fake.py, http.py + jsonpath.py,
                               # command.py (subprocess: serial, restarts, stderr artifact; §18.11, §18.23)
-    scorers/                  # base.py, deterministic.py, compose.py, ranking.py (hit/mrr/ndcg@k),
-                              # memory.py (hop<n>, all_hops); judge.py (E5)
-    packs/                    # __init__.py: registry (retrieval, memory); cost.py comes with every run
+    scorers/                  # base.py, deterministic.py (+ item_recall / item_duplicates), compose.py,
+                              # ranking.py (hit/mrr/ndcg@k), memory.py (hop<n>, all_hops), judge.py (model
+                              # judges), judging.py (label_agreement)
+    judges/                   # spec.py (role -> model), rubric.py (+ prompts), client.py (the only code that
+                              # calls a model: Ollama, OpenAI-compatible), fake.py (FakeJudge), target.py
+                              # (a judge as a target, for calibration), construct.py (labels by construction)
+    packs/                    # __init__.py: registry (retrieval, memory, extraction, grounded, judging);
+                              # cost.py comes with every run
     cache.py                  # output cache (design §18.5)
     runner.py                 # two-phase execution (design §6)
     store.py  index.py        # run directories (truth) and the Viewer's SQLite index (rebuildable)
@@ -49,13 +54,14 @@ backend/
 ```
 
 FakeTarget lives in the package (`lite_eval/targets/fake.py`) so suites and examples can use it too;
-FakeJudge joins it in E5.
+FakeJudge (`lite_eval/judges/fake.py`) likewise; tests inject it with `RunOptions(judge_factory=...)`.
 
 ## Layering
 
 - `contracts` imports nothing else from the package except `canonical`. `analysis/` and `report/terminal.py` read
   contracts only; `report/html.py` reads run directories through `views`. None of them calls a target or a judge.
-- `runner` is the only module that calls targets; `scorers/judge.py` is the only module that calls a model.
+- `runner` is the only module that calls targets; `judges/client.py` is the only module that calls a model
+  (through the judge scorer, and `judges/target.py` in calibration runs).
 - `server/` reads through `views`, `store` and `index`; it never runs a suite. Its only write is an annotation
   (`annotations.append_annotation`, shared with `lite-eval triage`).
 - `cli.py` and `pytest_plugin.py` are thin: they parse arguments and call the public API in `__init__.py`.
@@ -84,7 +90,8 @@ FakeJudge joins it in E5.
 ```
 uv sync --locked --all-extras
 uv run pytest
-uv run pytest -m ollama
+uv run pytest -m ollama                 # opt-in: real local models
+uv run pytest -m kb                     # opt-in: KB export against the owner's KB check.mjs
 uv run ruff check && uv run ruff format --check && uv run mypy
 uv run lite-eval --help
 uv run python scripts/dump_openapi.py   # after a server route or schema change

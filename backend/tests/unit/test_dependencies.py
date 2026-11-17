@@ -153,12 +153,3 @@ def test_scipy_binomtest_matches_the_exact_mcnemar_formula() -> None:
 
     # Design §18.2: p = min(1, 2 * BinomCDF(min(b, c); b + c, 0.5)); b=1, c=9 -> 2 * 11/1024.
     assert binomtest(1, 10, 0.5).pvalue == pytest.approx(22 / 1024, abs=1e-15)
-
-
-def test_openai_sdk_timeout_type_is_its_own() -> None:
-    # KB global/llm-evals/providers/openai.md: the SDK runs on httpx2;
-    # build timeouts with openai.Timeout.
-    import httpx2
-    import openai
-
-    assert openai.Timeout is httpx2.Timeout

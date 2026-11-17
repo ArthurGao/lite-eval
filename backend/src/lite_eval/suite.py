@@ -19,6 +19,7 @@ from pydantic import (
 from lite_eval.canonical import sha256_hex
 from lite_eval.contracts import GateSpec
 from lite_eval.errors import ConfigError
+from lite_eval.judges.spec import JudgeSpec
 from lite_eval.packs import get_pack
 from lite_eval.targets.command import CommandSpec
 from lite_eval.targets.http import HttpSpec
@@ -72,6 +73,32 @@ class Budget(_Spec):
     max_calls: int | None = Field(default=None, ge=0)
 
 
+KbTask = Literal["extraction", "judging", "drafting", "summarisation", "chat"]
+KbEffort = Literal["low", "medium", "high", "default", "n/a"]
+KbTrust = Literal["measured", "contested", "anecdotal"]
+KB_GRADER = r"^(labels|constructed|count|judge:.+|consensus:.+)$"
+
+
+class KbSpec(BaseModel):
+    """A suite's `kb:` section (design §18.24): what a KB llm-evals results row needs and a run
+    record cannot know. The value sets are the KB README's (`scripts/check.mjs`), so a wrong one
+    fails when the suite loads, not at export."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    eval: str
+    project: str
+    task: KbTask
+    dataset: str
+    grader: str = Field(pattern=KB_GRADER)
+    metrics: dict[str, str] = Field(min_length=1)  # lite-eval metric -> KB metric name
+    trust: KbTrust = "measured"
+    notes: str
+    vendor: str | None = None
+    model: str | None = None
+    effort: KbEffort | None = None
+
+
 class SuiteSpec(_Spec):
     schema_version: Literal[1] = 1
     name: str
@@ -91,6 +118,10 @@ class SuiteSpec(_Spec):
     allow_paid_in_ci: bool = False
     cache: Literal["auto", "on", "off"] = "auto"
     gate: GateSpec | None = None
+    # Model judges (design §9, §18.24): role -> model; `judge` scorers name a role.
+    judges: dict[str, JudgeSpec] = Field(default_factory=dict)
+    judge_timeout_s: float = Field(default=120.0, gt=0)
+    kb: KbSpec | None = None  # `lite-eval export kb`: the KB results row's fields (§18.24)
 
     @field_validator("gate", mode="before")
     @classmethod

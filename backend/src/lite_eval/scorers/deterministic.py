@@ -142,6 +142,42 @@ def _set_ratio(of_expected: bool) -> Judge:
     return judge
 
 
+def _items(value: Any) -> list[str]:
+    """An extraction's items: a list (or `{items: [...]}`) of strings or `{text}` dicts."""
+    if isinstance(value, dict) and "items" in value:
+        value = value["items"]
+    return [
+        str(v.get("text", "")) if isinstance(v, dict) else _text(v) for v in _as_list(value or [])
+    ]
+
+
+def _item_recall(got: Any, want: Any, p: dict[str, Any]) -> tuple[float, bool | None, str, Any]:
+    """Extraction pack (design §7): each expected item found in some output item, normalised
+    as `contains` does (whitespace collapsed, case ignored unless asked); recall first."""
+    cs = p.get("case_sensitive", False)
+    expected = want.get("items", []) if isinstance(want, dict) else _as_list(want)
+    found = [_norm(t, cs) for t in _items(got)]
+    missing = [w for w in expected if not any(_norm(_text(w), cs) in f for f in found)]
+    n = len(expected)
+    value = (n - len(missing)) / n if n else 1.0
+    return value, not missing, f"{n - len(missing)}/{n} items", {"missing": missing}
+
+
+def _item_duplicates(got: Any, want: Any, p: dict[str, Any]) -> tuple[float, bool | None, str, Any]:
+    """The share of output items that repeat an earlier one (lower is better)."""
+    del want
+    items = [_norm(t, p.get("case_sensitive", False)) for t in _items(got)]
+    seen: set[str] = set()
+    repeats: list[str] = []
+    for item in items:
+        if item in seen:
+            repeats.append(item)
+        seen.add(item)
+    value = len(repeats) / len(items) if items else 0.0
+    evidence = {"duplicates": sorted(set(repeats)), "count": len(repeats)}
+    return value, not repeats, f"{len(repeats)} duplicate(s)", evidence
+
+
 _JUDGES: dict[str, Judge] = {
     "exact_match": _exact,
     "contains": _contains,
@@ -150,6 +186,8 @@ _JUDGES: dict[str, Judge] = {
     "must_not": _must_not,
     "set_recall": _set_ratio(of_expected=True),
     "set_precision": _set_ratio(of_expected=False),
+    "item_recall": _item_recall,
+    "item_duplicates": _item_duplicates,
 }
 _COMMON_PARAMS = {"field", "expected", "case_sensitive"}
 _BINARY_KINDS = {"exact_match", "contains", "regex", "must_not"}

@@ -408,6 +408,26 @@ export type CostSummary = {
      */
     input_tokens?: number;
     /**
+     * Judge Calls
+     */
+    judge_calls?: number;
+    /**
+     * Judge Cost Usd
+     */
+    judge_cost_usd?: number;
+    /**
+     * Judge Input Tokens
+     */
+    judge_input_tokens?: number;
+    /**
+     * Judge Output Tokens
+     */
+    judge_output_tokens?: number;
+    /**
+     * Judge Reasoning Tokens
+     */
+    judge_reasoning_tokens?: number;
+    /**
      * Latency P50 Ms
      */
     latency_p50_ms?: number | null;
@@ -726,6 +746,11 @@ export type JudgeRecord = {
      * Temperature
      */
     temperature: number;
+    /**
+     * Think
+     */
+    think?: boolean | string | null;
+    usage?: Usage | null;
 };
 
 /**
@@ -1268,6 +1293,10 @@ export type ScoreError = {
  * ScorerRef
  */
 export type ScorerRef = {
+    /**
+     * Calibrated
+     */
+    calibrated?: boolean | null;
     /**
      * Name
      */

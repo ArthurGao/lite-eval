@@ -9,7 +9,7 @@ from lite_eval.contracts import Comparison
 from lite_eval.errors import ConfigError, GateFailed, RunError
 from lite_eval.report.terminal import render_gate
 from lite_eval.runner import RunResult
-from lite_eval.store import StoredRun, baseline_run, load_run, root_of
+from lite_eval.store import StoredRun, baseline_run, load_run, read_record, root_of
 
 
 def compare_runs(baseline: str | Path, candidate: str | Path) -> Comparison:
@@ -51,3 +51,25 @@ def assert_gate(results: Sequence[RunResult]) -> None:
     outcomes = gate_results(results)
     if not all(o.passed for o in outcomes):
         raise GateFailed("\n".join(render_gate(o) for o in outcomes if not o.passed))
+
+
+def export_kb(run_dirs: Sequence[str | Path]) -> str:
+    """Rows for the KB's llm-evals `results.jsonl` (design §13, §18.24), from runs of one suite;
+    the suite's `kb:` section gives what a record cannot know. Checked against the KB schema."""
+    from lite_eval.report.kb import kb_rows, render_rows
+    from lite_eval.suite import load_suite
+
+    if not run_dirs:
+        raise ConfigError("export kb needs at least one run")
+    records = [read_record(Path(d)) for d in run_dirs]  # run.json only: no outputs, no scores
+    suites = {r.suite.name for r in records}
+    if len(suites) != 1:
+        raise ConfigError(f"export kb takes runs of one suite, got {sorted(suites)}")
+    first = records[0]
+    if first.suite.path is None:
+        raise ConfigError(f"run {first.run_id} does not record its suite path")
+    root = root_of(Path(run_dirs[0]))
+    suite = load_suite(root / first.suite.path, root)
+    if suite.spec.kb is None:
+        raise ConfigError(f"{suite.path}: no `kb:` section to export with (design §18.24)")
+    return render_rows(kb_rows(records, suite.spec.kb))

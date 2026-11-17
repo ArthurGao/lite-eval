@@ -55,5 +55,9 @@ def safe_score(scorer: Scorer, case: Case, output: Output) -> Score:
     try:
         return scorer.score(case, output)
     except Exception as exc:
-        error = ScoreError(kind="scorer_exception", message=f"{type(exc).__name__}: {exc}")
-        return failed(scorer, output, "scorer raised", error)
+        return scorer_raised(scorer, output, exc)
+
+
+def scorer_raised(scorer: Scorer, output: Output, exc: Exception) -> Score:
+    error = ScoreError(kind="scorer_exception", message=f"{type(exc).__name__}: {exc}")
+    return failed(scorer, output, "scorer raised", error)

@@ -27,3 +27,23 @@ def test_wheel_and_sdist_include_the_license_text(tmp_path: Path) -> None:
         assert "License-Expression: Apache-2.0" in zf.read(f"{dist_info}/METADATA").decode()
     with tarfile.open(sdist) as tf:
         assert f"{sdist.name.removesuffix('.tar.gz')}/LICENSE" in tf.getnames()
+
+
+def test_the_wheel_carries_every_judge_prompt(tmp_path: Path) -> None:
+    """A judge's prompt is read from the installed package (design §9): a wheel without it would
+    fail only when a judge is first called."""
+    from lite_eval.judges.rubric import RUBRICS
+
+    subprocess.run(
+        ["uv", "build", "--wheel", "--quiet", "--out-dir", str(tmp_path)],
+        cwd=BACKEND,
+        check=True,
+        timeout=120,
+    )
+    wheel = next(tmp_path.glob("lite_eval-*.whl"))
+    with zipfile.ZipFile(wheel) as zf:
+        names = set(zf.namelist())
+    expected = {
+        f"lite_eval/prompts/judge_{r}_{part}.j2" for r in RUBRICS for part in ("system", "user")
+    }
+    assert expected and expected <= names

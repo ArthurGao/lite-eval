@@ -1,0 +1,9 @@
+Question:
+{{ question }}
+
+Sources:
+{% for source in sources %}[{{ loop.index }}] {{ source }}
+{% else %}(none)
+{% endfor %}
+Answer:
+{{ answer }}

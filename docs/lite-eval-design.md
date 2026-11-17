@@ -389,9 +389,9 @@ class Scorer(Protocol):
 | --- | --- | --- | --- |
 | `retrieval` | `{doc, evidence}` 或 `{relevant: [ids]}` | 证据命中；hit@k、MRR@10、nDCG@k、recall@k（ranx 交叉核对）；延迟 P50/P95 | lite-rag、llm-steward |
 | `memory` | 多跳：`{hops: [[kw…]…]}`；证据：`{relevant: [session 或 dia_id]}`；`must_not` | 每跳命中（`hop<n>`）、全部命中（`all_hops`）；证据召回（`recall@k`）；禁止内容（`must_not`）。推迟：抽取（`{facts}`）、更新（`{superseded, kept}`）等有项目要测时再做；拒答放到 E5 的模型评审（§18.23） | lite-mem；LongMemEval、LoCoMo |
-| `extraction` | `{items: […]}` | 召回优先；miss 列表；重复计数 | tenderted 类 |
-| `judging` | `{label}` | 一致率、混淆矩阵；支持“改坏”式的构造用例 | 评审模型的校准（§9） |
-| `grounded` | `{must: […], must_not: […]}` | 无依据的说法、规则遵守、是否切题（模型评审 + 规则） | RAG 写作 |
+| `extraction` | `{items: […]}` | `item_recall`（召回优先，evidence 列出漏掉的条目）、`item_duplicates`（重复的比例）；不做精确率门禁（§18.24） | tenderted 类 |
+| `judging` | `{label}` | `label_agreement`（一致率），按 `construction` 标签分组；混淆矩阵由分数的 evidence 算出；构造工具 `judges/construct.py`（§18.24） | 评审模型的校准（§9） |
+| `grounded` | `{must: […], must_not: […]}` | `contains`（must，看 `answer`）、`must_not`、评审 `judge.grounded`（回答里有没有来源不支持的说法）；是否切题以后按需要加规则 | RAG 写作 |
 | `agent` | `{goal, checks: […]}` | 任务完成、工具调用正确、步数、费用 | 以后的 agent 应用（E6） |
 | `cost` | — | 每个用例的 token（含推理）、费用、延迟；所有 pack 都带 | 全部 |
 
@@ -449,6 +449,7 @@ class Scorer(Protocol):
 - **结构化输出**：评审返回 `{verdict, score, reason, evidence}`，由 pydantic 校验；解析失败记为评分错误，不算通过。
 - **提示词**放在 `backend/src/lite_eval/prompts/*.j2`，不写成内联字符串。
 - **测试**：用 fake 评审；真实模型只在可选的 marker（`-m ollama`）下运行。
+- **落地（E5a）**：调用、校准检查、异步评分、费用、KB 导出的精确规格见 §18.24。"正式 Suite" = 带门禁的 Suite：没校准的评审照样能跑（探索、看真实输出的标记率），但运行带 `judge_uncalibrated` 警告，门禁拒绝依赖它。
 
 ## 10. Viewer（前端）
 
@@ -587,7 +588,8 @@ lite-eval/
       config.py                    # pydantic-settings，前缀 LITE_EVAL_，字段不用别名
       datasets/                    # 本地目录加载、哈希；loaders/（longmemeval, locomo）
       targets/                     # python.py, http.py, command.py, fake.py（测试用）
-      scorers/                     # deterministic.py, ranking.py（ranx 只交叉核对）, judge.py, compose.py
+      scorers/                     # deterministic.py, ranking.py（ranx 只交叉核对）, judge.py, judging.py, compose.py
+      judges/                      # spec.py, rubric.py, client.py（唯一调用模型的代码）, fake.py, target.py, construct.py
       packs/                       # retrieval, memory, extraction, judging, grounded, agent, cost
       runner.py                    # 两段式、缓存、并发、超时、重试、预算、setup 共享、预热、自检
       store.py                     # 运行目录读写、baseline、annotation
@@ -637,7 +639,7 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
 | E2 检索 pack 与对比 | retrieval pack（证据命中、ranx 指标、延迟）、setup 共享和预热、`compare`（§18.1–§18.3）、门禁（CLI 和 pytest）、baseline、排名指标交叉核对；**迁移 lite-rag** | 按 §18.16 的 lite-rag 条目：逐题 `answer_rank`、`doc_rank` 相同，聚合指标误差 ≤ 1e-9；McNemar 和 bootstrap 用手算的例子核对；不兼容的对比拒绝做门禁；门禁的退出码按 §18.4；门禁语义按 §18.19（`min`/`max`、`max_drop` 加或不加 `require_significant`、重复运行）各有测试；同一 `setup_identity` 的两个配置 setup 只调用一次、预热不计时且不进记录，teardown 在组内全部跑完后（§18.18）；自写指标和 ranx 在测试里一致；lite-rag 改为调用 lite-eval |
 | E3 Viewer | 只读 API、SQLite 索引（§18.15）、前端各页面（§10.1）、Annotation（§18.9、§18.10）、HTML 导出、打包进 Python 包（§18.14） | Playwright e2e：列出运行 → 运行详情 → 对比 → 用例详情 → 给 miss 归类；数据集页加一条“标注有误”；趋势页显示 baseline 切换；导出的单次运行和对比两种 HTML 不连服务端都能打开；Viewer 拒绝非 loopback 地址、非 loopback 的 Host 和 Origin、没有 token 的写入，任何响应都不带 CORS 头（§18.10）；导出用 run 记录的脱敏规则，用例内容含 `</script>` 时导出的 HTML 不被截断、不执行脚本（§18.12）；两个 Viewer 不能同时用一个目录；文件和索引跑同一套读取测试；干净 venv 里装 wheel 后 `lite-eval view --check` 成功 |
 | E4 记忆 pack 与接入 | memory pack；HTTP 和子进程 Target（§18.11）；LongMemEval 和 LoCoMo 加载器；**迁移 lite-mem 的两跳集和 llm-steward 的 recall 门禁** | 按 §18.16 的 lite-mem、llm-steward 条目逐项相同；llm-steward 的 `-m eval` 改用 lite-eval 的门禁；HTTP 和子进程 Target 的每种失败（状态码、超时、超长、非 JSON、进程退出）都有测试；子进程 Target 在 `concurrency=4` 下每个回复对应正确的用例，回复的 `case_id`/`repeat` 不符记为 `invalid_output`（§18.11）；两个加载器用各自的小样例文件测试转换结果和许可证记录；LongMemEval-S 用本地模型跑通一个小子集（可选 marker） |
-| E5 模型评审 | 评审评分器、校准流程；judging、extraction、grounded 三个 pack；KB 导出 | 校准集上测出一致率；构造的反例被正确识别；评审解析失败记为评分错误；未校准的评审不能被正式 Suite 引用；KB 导出用固定的样例运行生成，和提交的期望文件逐字相同，并通过 KB 的 `check.mjs`（导出格式写明对应 KB README 的哪个 schema 版本） |
+| E5 模型评审（E5a lite-eval，E5b lite-rag S13） | 评审评分器、校准流程；judging、extraction、grounded 三个 pack；KB 导出 | 校准集上测出一致率；构造的反例被正确识别；评审解析失败记为评分错误；未校准的评审不能被正式 Suite 引用；KB 导出用固定的样例运行生成，和提交的期望文件逐字相同，并通过 KB 的 `check.mjs`（导出格式写明对应 KB README 的哪个 schema 版本） |
 | E6 agent（以后） | agent pack；Inspect AI 桥接（可选） | 等有 agent 应用要测时再定 |
 | E7 收尾 | 全仓库 `/simplify` 和 Codex 审查；README；发布方式 | 审查结论记录在案 |
 
@@ -934,6 +936,20 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
   - 改坏脚本：37/37 变红，源码复原（第一轮有 2 处没变红，补了"JSON 键里的密钥"和"评分 evidence 里的密钥"两个测试；后来又发现 HTTP 和子进程的 UTF-8 各缺一个测试，补上）。
   - 提交后的安全审查（`9d8e815`）：两条都成立，先写失败的测试——别的编码器的转义写法和混写（`\u003c`、`&#47;`、只转义一部分）没被遮盖：改成按字符匹配所有 JSON 和 HTML 转义；stderr 在上限处截断会留下密钥的开头：截断时去掉末尾一个最长形式的长度（包括前一块正好写满上限的情况）。改坏脚本 42/42 变红。`412af4b` 的再次审查又找到两处，同样先写失败的测试：截断之后裁掉末尾又空出位置，后来的块会接着保留；实体的前导零不限，`longest()` 就不是上界。改成截断之后不再保留，前导零最多 8 个、每个字符最长 18 字节。改坏脚本 44/44 变红。
   - 之后：llm-steward 用 `configs: [plain]` 和 `{metric: errors, max: 0}` 代替测试里的手写断言、lite-mem 的 LongMemEval 用 `errors max 0`，等 lite-eval 发布新版本、它们改了依赖之后，各自作为一个小提交来做。
+
+- **E5a 模型评审（2026-11-18，lite-eval；计划经 owner 批准，E5 分成 E5a lite-eval 和 E5b lite-rag S13）**：
+  - owner 定：评审用本机 Ollama 的 qwen3:8b（免费），以后按 owner 的指示再经 llm-gateway 加 API 模型对比；第一个真实评审是 lite-rag 回答的 grounded 判定（E5b）。
+  - 做了什么（细节见 §18.24）：`judges/`（spec、client、rubric、fake、target、calibration、construct）；评审评分器和异步评分阶段；校准检查、`judge_uncalibrated` 警告、门禁拒绝没校准的评审；`judging`、`extraction`、`grounded` 三个 pack；终端的评审费用和混淆矩阵；`lite-eval export kb`。契约只加字段：`JudgeRecord.think`、`JudgeRecord.usage`、`CostSummary.judge_*`、`ScorerRef.calibrated`；`openapi.json` 和前端 client 重新生成。
+  - 和计划不同的地方：
+    - 去掉 `[judge]` extra（openai SDK）：两种通道都用 httpx2 直接调，不依赖 SDK。E0 钉 openai API 的测试 `test_openai_sdk_timeout_type_is_its_own` 随依赖一起删掉（它钉的库已经不是依赖了，不是为了变绿）；兄弟仓库都没用这个 extra。
+    - 构造工具没做"加一句禁用语"：那由 `must_not` 规则判，不是 grounded 评审的标签。
+    - 评审不能放进组合评分器（组合是同步的，评审的分数也要单独看得到）。
+  - /simplify（四个审查）采纳：评审调用和身份各只剩一份（`Rubric.ask`、`Rubric.identity`，校准时评审看到的提示词和使用时相同）；校准检查挪进 `judges/calibration.py`，写法在构建评分器时校验，只读 `run.json`；runner 里评审的开关、密钥、计数合成一个 `judging()` 上下文管理器；并发名额只在调用期间占用（预算检查、调用、记账在同一个名额里，退避在外面）；确定性评分器不建任务；模板只读一次、编译一次；key 用 `resolve_env`，`secrets` 进 `JudgeClient` 协议；只在出错时遮盖回复；`_Ledger.charge`、`scorer_raised` 共用；删掉没用的 `is_judge` 和 schema 里没有的 `Verdict.score`；`KbSpec` 用 KB 的取值做类型、挪到 `suite.py`，写错在加载 Suite 时就报错；导出只读记录。不采纳：生成和评审共用一个重试函数（要改已有的生成代码，两边记录的错误种类不同，留到 E7）；评审客户端和 HTTP Target 共用请求函数（遮盖时机不同）；评审的 `_sources` 和 extraction 的 `_items` 合并（会让 `judges/` 依赖 `scorers/`）；评审客户端按 Suite 只开一次（每个配置多几次握手，可以忽略）；混淆矩阵进 Viewer 和 HTML（前端的事，以后做）。
+  - /simplify 提出、留给 owner 定：门禁现在只要有一个没校准的评审就整个拒绝（按 §9 和计划"正式 Suite = 带门禁"）；审查建议只拒绝读这个评审指标的规则，让探索性的评审能和已有的确定性门禁放在同一个 Suite 里。
+  - Codex：采纳 2 条，各先写失败的测试——评审调用不计入 `budget.max_calls`（改为每次调用都记进共用的账本）；`min_agreement` 接受 `-1`、`NaN`、`1.5`（改为必须是 0 到 1 的数）。不采纳 1 条："评审 Target 的身份不含 `base_url`，换一台服务器会用到缓存的结论"：身份不含主机是有意的（§18.24，同一个模型在另一台机器上是同一件仪器）；真正的缺口是模型标签不钉住 digest，在同一台机器上 `ollama pull` 之后一样存在，要重新判就用 `--no-cache`。
+  - 改坏脚本：41/41 变红，源码复原。第一轮有 3 处没变红（不合格回复的费用不计入预算、提示词版本不进身份、引用列表 `[1, 3, 5]` 中间的数字被当成数字），补了测试；/simplify 之后又补了"部分完成的校准运行不算数"。另：改坏脚本把 `==` 换成 `!=`（同样长度）并在同一秒内复原时，Python 的字节码缓存按修改时间和大小判断，留下了改坏的 `.pyc`，之后的测试莫名失败；脚本改为 `PYTHONDONTWRITEBYTECODE=1`。
+  - 验证（提交前最后一次）：ruff、format、mypy 通过；pytest 515 passed（锁定版本、`CI=true`、最低声明版本三种环境）；`-m kb` 用 KB 自己的 `check.mjs` 通过；`-m ollama` 和 qwen3:8b 真实往返通过（之后 Ollama 已停）；前端 typecheck、lint、test（14）、build、e2e（8）通过。
+
 ## 17. 已定的开工问题（2026-11-13）
 
 开工前问 owner 的四个问题。第一条由 owner 定，其余由 owner 交给实现方按设计的建议决定。
@@ -1418,3 +1434,27 @@ runner 开始时会把要执行的命令或 URL 打印出来。
   - **LongMemEval**（MIT）：每题一个用例，id 是 `question_id`；输入 `{question, question_date, haystack: <question_id>}`，这题的历史 session 放在 `corpus/<question_id>.json`：`[{id, date, turns: [{role, content}]}]`，按文件顺序（`has_answer` 是标签，不给被测系统）。E4b 改：E4a 时历史直接放在输入里，M 的 500 题合计 2.7 GB 都会进用例，runner 要全部读进内存。注意：密钥扫描（§18.12）从 E1 起只扫 `cases.jsonl`，从不扫 `corpus/`（LoCoMo 的对话、lite-rag 的文档都一样），所以历史挪进语料以后也不再被扫描；要不要扫语料是待定的问题（E4b /simplify 提出，见 §16 E4b 记录）。S 里 80% 的 session 只出现在一题，按 session 去重省不了多少，所以按题存。期望 `{relevant: answer_session_ids, answer}`（数字答案转成文本）；标签 `question_type`。`_abs` 结尾的拒答题默认跳过（和官方检索评测一致），保留时加标签 `abstention: "true"`。`--limit` 按文件顺序取前 N 个保留的问题。
   - **LoCoMo**（**CC BY-NC 4.0**：不得商用，须署名）：每段对话只写一次，放在 `corpus/<sample_id>.json`（说话人、按编号排序的 session，轮次原样保留，含 `dia_id`）；每个问答一个用例，id 是 `<sample_id>:q<nnn>`，输入 `{question, conversation: <sample_id>}`，Target 在 `setup` 里从 `dataset.corpus_dir` 读对话。把对话复制进它的约 200 个问题，每次运行都要把它哈希、扫描、发送 200 遍（E4a /simplify 发现）。期望 `{relevant: evidence, answer}`。类别 5 没有正确答案：`answer` 为空，陷阱答案单独放在 `adversarial_answer`，不当作答案。标签 `category` 只用原始编号，官方没有写明各编号的含义。
   - 测试只用 `tests/data/loaders/` 里手写的虚构样例（格式照官方文件），不提交官方数据。
+
+### 18.24 模型评审、校准、KB 导出（E5a 定）
+
+- **配置**：Suite 的 `judges: {<角色>: JudgeSpec}`，评分器写 `{judge: {rubric, role?, calibration?}}`，`role` 默认等于 `rubric`；缺这个角色是配置错误。`JudgeSpec`：`provider`（`ollama` | `openai`）、`model`、`base_url`、`channel`（默认等于 provider）、`temperature`（默认 0）、`think`（`false` / `true` / 等级字符串）、`api_key_env`、`billing`（默认 `unknown`）、`price`（每百万 token）、`max_tokens`。
+- **身份**：`{provider, channel, model, temperature, think}`，加上 `rubric` 和 `prompt_version`（两个模板内容的 sha256 前 12 位，不手工编号）就是评分器的身份，评分器版本是它的哈希；`base_url` 和密钥不在里面（同一个模型换台机器不算换仪器）。任何一项变了，§18.3 的可比性检查就报不可比。
+- **调用**（`judges/client.py`，整个包里唯一调用模型的代码；只用 httpx2，不依赖 openai SDK，所以去掉了 `[judge]` extra）：
+  - `ollama`：`POST /api/chat`，`stream: false`、`format: <JSON schema>`、`think`、`options.temperature`；用量取 `prompt_eval_count` / `eval_count`，回复里的 `thinking` 原样记下。
+  - `openai`（OpenAI 兼容，llm-gateway 走这个）：`POST /chat/completions`，`response_format: {type: json_schema, json_schema: {name: verdict, strict: true, schema}}`，`think` 是字符串时发 `reasoning_effort`；用量含 `completion_tokens_details.reasoning_tokens`。
+  - 两边的参数 2026-11-18 用 context7 核对（Ollama 0.40.15 的文档、OpenAI API reference），`-m ollama` 下和 qwen3:8b 真实往返过一次。
+  - 密钥从 `api_key_env` 取，变量缺了是配置错误；密钥作为已知值（§18.12）遮盖在错误信息、记录和整个运行的脱敏里。超时、非 2xx 记为 `judge_call_failed`；传输错误按 §6 的规则重试，用尽后同样是 `judge_call_failed`。不做 fallback。
+- **回复**：按规则的 schema 校验 `{verdict, reason, evidence}`（§9 写的 `score` 没放进 schema：结论是二值的，评分器的分数由结论得出），`verdict` 只能取规则列出的值；不合格记为评分错误 `invalid_judge_output`，原始回复保留在 `JudgeRecord.raw`。`Score.value` = 1（结论等于规则的 `passing`）或 0，`verdict=value`；evidence 是 `{verdict, evidence}`。`JudgeRecord` 加了 `think`、`usage`（只加字段）。
+- **异步评分**：评分阶段变成 `ascore_outputs`；确定性评分器照旧同步算（不建任务），评审调用并发，并发数 = Suite 的 `concurrency`（预算检查、调用和记账在同一个名额里，退避在名额外，免得等重试的调用占着名额），每次调用的超时是 Suite 的 `judge_timeout_s`（默认 120）。预算账本把评审的费用一起算，超了以后剩下的评审不再调用，记为评分错误，运行标为 `partial`。被测系统本身出错的输出不送去评审（它已经按 §18.8 计为失败）。
+- **费用**：`CostSummary` 加 `judge_calls`、`judge_input_tokens`、`judge_output_tokens`、`judge_reasoning_tokens`、`judge_cost_usd`，和被测系统的费用分开；终端报告有一行 `judges: …`。CI 计费守卫（§18.13）同样管评审：不是 `free` 的评审在 CI 里拒绝运行。
+- **评审结果不缓存**：本阶段不做；缓存键要含输出内容，等确实有重复开销再加。`rescore` 会重新评审已存的输出（会调用评审，从不调用被测系统），用 Suite 现在的 `judges` 和预算。
+- **组合**：评审不能放进 `all_of` / `any_of` / `weighted`（配置错误）：组合是同步的，而且一个评审的分数要单独看得到。
+- **校准**：
+  - 校准运行 = 一次 `judging` pack 的运行，Target 是 `lite_eval.judges.target:judge_target`（`JudgeTarget`），config 就是评审的身份；用例 `input` 是评审看到的内容，`expected: {label}`，构造的用例带标签 `construction`。评审回复不合格时这个用例记为 `invalid_output`。
+  - 评分器写 `calibration: {run: <相对评测根目录的运行目录>, min_agreement}`（写法在构建评分器时就校验）。运行前、调用任何东西之前由 `judges/calibration.py` 检查（只读 `run.json`）：评分器和校准 Target 的身份都来自同一个 `Rubric.identity`，调用都走 `Rubric.ask`，所以校准时评审看到的提示词和使用时相同；运行存在；它是 judging 运行（Target 是 `judge`，有 `label_agreement`）；它的 config 和现在评审的身份逐项相同（报错列出第一处不同，例如 `think False -> True`）；状态是 `complete`；一致率 ≥ `min_agreement`。任何一项不满足都是配置错误（退出码 2）。
+  - 没写 `calibration`：运行带警告 `judge_uncalibrated`，`ScorerRef.calibrated = false`；门禁拒绝（配置错误），不管门禁规则看的是不是这个评审。
+  - 终端报告对 judging 运行列出混淆矩阵（期望 → 判定：个数），从分数的 evidence 算出（`analysis/judging.confusion`），不加契约字段。
+- **构造工具**（`judges/construct.py`，方法论 §2）：`change_number`（随机选一个数字改掉，引用编号不算数字）、`swap_answer`、`insert_sentence`、`append_section` → `unsupported`；`drop_citations` → `grounded`（grounded 规则不评引用标记）。选择都用调用方给的 `random.Random`，同一个种子得到同一个校准集。计划里的"加一句禁用语"没做：那是 `must_not` 规则管的，不是 grounded 评审的标签。
+- **extraction pack**：输出是条目列表（或 `{items: [...]}`），每项是字符串或 `{text}`；期望 `{items: [...]}`。`item_recall`：期望条目在某个输出条目里出现（和 `contains` 一样合并空白、默认不分大小写），evidence 列出漏掉的；`item_duplicates`：重复条目占输出条目的比例（越低越好），evidence 列出重复的。
+- **grounded pack**：默认评分器 `{contains: {field: answer, expected: must}}`、`{must_not: {field: answer}}`、`{judge: {rubric: grounded}}`（要求 Suite 有 `judges.grounded`）。`Pack.scorers` 因此允许 dict 写法。
+- **KB 导出** `lite-eval export kb <运行目录…>`（`api.export_kb`）：同一个 Suite 的运行，每个运行、每个导出的指标一行，写到 stdout。字段按 KB `global/llm-evals/README.md` 的 `results.jsonl` schema（2026-11-18 版，即它的 `scripts/check.mjs` 检查的字段和取值），每行写出前先按这套规则检查，KB 会拒绝的行在这里就报配置错误。记录里算得出的：`date`（开始日期）、`n`、`trials`、`value`（保留 4 位）、`values`（重复运行时）、`cost_usd`（每题，被测系统 + 评审）、`variant`（config 名）；记录里没有的写在 Suite 的 `kb:` 段（`KbSpec`，task / effort / trust 是 KB 的取值、grader 按 KB 的正则，写错在加载 Suite 时就报错；`eval`、`project`、`task`、`dataset`、`grader`、`metrics: {lite-eval 指标: KB 指标名}`、`trust`、`notes`，可选 `vendor`/`model`/`effort`）。没写时 vendor、model 取自 Target 的 config 或 info；评审 Target 的 effort 由 `think` 得出（关 = `n/a`，开 = `default`，等级原样）。测试：提交的 v1 样例运行导出后和 `tests/data/kb/v1-run.jsonl` 逐字相同；`-m kb`（只在本机有 KB 和 node 时）把这些行追加进 KB 的一份拷贝，跑它的 `check.mjs` 必须 0 错误；CI 没有 KB，靠上面那套检查兜底。

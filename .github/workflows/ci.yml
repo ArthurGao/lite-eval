@@ -40,7 +40,7 @@ jobs:
         with:
           version: "0.10.8"
       - run: uv venv --python 3.12
-      - run: uv pip install --resolution lowest-direct -e ".[server,ranking,judge]" pytest==9.2.0 pytest-asyncio==1.5.0
+      - run: uv pip install --resolution lowest-direct -e ".[server,ranking]" pytest==9.2.0 pytest-asyncio==1.5.0
       - run: .venv/bin/python -m pytest -v
 
   frontend:

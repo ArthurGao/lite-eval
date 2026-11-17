@@ -56,6 +56,12 @@ def gate_problems(
     baseline: RunRecord | None,
 ) -> None:
     """Raise ConfigError for a gate that cannot be evaluated (design §18.3, §18.4)."""
+    for ref in scorers:
+        if ref.calibrated is False:
+            raise ConfigError(
+                f"judge {ref.name} is not calibrated: a gate cannot rely on it (design §9); "
+                "name its calibration run"
+            )
     known = gate_metrics(scorers)
     for rule in spec.rules:
         if rule.metric not in known:

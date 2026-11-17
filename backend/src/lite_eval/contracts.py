@@ -92,6 +92,9 @@ class JudgeRecord(_Record):
     prompt_version: str
     temperature: float
     raw: JsonValue = None
+    # E5: thinking is part of the instrument (L4); usage is billed apart from the target's.
+    think: bool | str | None = None
+    usage: Usage | None = None
 
 
 class ScoreError(_Record):
@@ -147,6 +150,8 @@ class ScorerRef(_Record):
     name: str
     version: str
     verdict: Verdict | None = None  # None: recorded before E2
+    # E5: for a model judge, whether a calibration run vouches for it (None: not a judge)
+    calibrated: bool | None = None
 
 
 class RedactConfig(_Record):
@@ -193,6 +198,12 @@ class CostSummary(_Record):
     usage_unknown: int = 0  # outputs whose usage was not reported
     latency_p50_ms: float | None = None
     latency_p95_ms: float | None = None
+    # E5: model judges, billed apart from the target (design §18.24)
+    judge_calls: int = 0
+    judge_input_tokens: int = 0
+    judge_output_tokens: int = 0
+    judge_reasoning_tokens: int = 0
+    judge_cost_usd: float = 0.0
 
 
 class RunWarning(_Record):

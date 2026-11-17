@@ -672,6 +672,31 @@
             "title": "Input Tokens",
             "type": "integer"
           },
+          "judge_calls": {
+            "default": 0,
+            "title": "Judge Calls",
+            "type": "integer"
+          },
+          "judge_cost_usd": {
+            "default": 0.0,
+            "title": "Judge Cost Usd",
+            "type": "number"
+          },
+          "judge_input_tokens": {
+            "default": 0,
+            "title": "Judge Input Tokens",
+            "type": "integer"
+          },
+          "judge_output_tokens": {
+            "default": 0,
+            "title": "Judge Output Tokens",
+            "type": "integer"
+          },
+          "judge_reasoning_tokens": {
+            "default": 0,
+            "title": "Judge Reasoning Tokens",
+            "type": "integer"
+          },
           "latency_p50_ms": {
             "anyOf": [
               {
@@ -1206,6 +1231,30 @@
           "temperature": {
             "title": "Temperature",
             "type": "number"
+          },
+          "think": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Think"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Usage"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -2135,6 +2184,17 @@
       "ScorerRef": {
         "additionalProperties": false,
         "properties": {
+          "calibrated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibrated"
+          },
           "name": {
             "title": "Name",
             "type": "string"

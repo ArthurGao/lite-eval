@@ -39,9 +39,11 @@ If a change must contradict the design, update the design in the same change and
 
 **E4a done (2026-11-14)**: memory pack, HTTP and subprocess targets, `dataset import` (LongMemEval, LoCoMo).
 **E4b (2026-11-14)**: streaming import, LongMemEval history in `corpus/`; lite-mem's S11 runs its two-hop eval and
-LongMemEval on lite-eval (oracle and S measured; M pending). **E4c (2026-11-14)**: llm-steward's recall gate runs on
+LongMemEval on lite-eval (oracle, S and M measured). **E4c (2026-11-14)**: llm-steward's recall gate runs on
 lite-eval (its P8). **E4d (2026-11-14)**: secrets masked by value (`Target.secrets()`), gate rules per config
-(`configs:`), gate metrics `errors` / `error_rate` / `scoring_errors`. Next: E5 (model judges); design §16.
+(`configs:`), gate metrics `errors` / `error_rate` / `scoring_errors`. **E5a (2026-11-18)**: model
+judges (Ollama / OpenAI-compatible), calibration runs, extraction / grounded / judging packs, `export kb`
+(design §18.24). Next: E5b (lite-rag S13, the grounded judge on qwen3:8b); design §16.
 
 ## Rules
 

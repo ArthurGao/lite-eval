@@ -1,6 +1,7 @@
 """Packs: a task type's defaults (design §7). The cost pack comes with every run, unlisted."""
 
 from dataclasses import dataclass
+from typing import Any
 
 from lite_eval.errors import ConfigError
 
@@ -8,7 +9,7 @@ from lite_eval.errors import ConfigError
 @dataclass(frozen=True)
 class Pack:
     name: str
-    scorers: tuple[str, ...]  # used when a suite lists no scorers
+    scorers: tuple[str | dict[str, Any], ...]  # used when a suite lists no scorers
     description: str
 
 
@@ -28,6 +29,34 @@ PACKS: dict[str, Pack] = {
             "recalled memories [str | {content}] against {hops: [[keyword, ...], ...]}; "
             "evidence recall against {relevant: [session or turn ids]} uses recall@k, "
             "forbidden content must_not"
+        ),
+    ),
+    "extraction": Pack(
+        name="extraction",
+        scorers=("item_recall", "item_duplicates"),
+        description=(
+            "extracted items [str | {text}] (or {items: [...]}) against {items: [...]}: recall "
+            "first, the missed items listed, duplicates counted"
+        ),
+    ),
+    "grounded": Pack(
+        name="grounded",
+        scorers=(
+            {"contains": {"field": "answer", "expected": "must"}},
+            {"must_not": {"field": "answer"}},
+            {"judge": {"rubric": "grounded"}},
+        ),
+        description=(
+            "an answer {answer, sources: [{text}]} against {must: [...], must_not: [...]}, and "
+            "the grounded judge (needs `judges.grounded`; calibrate it first, design §9)"
+        ),
+    ),
+    "judging": Pack(
+        name="judging",
+        scorers=("label_agreement",),
+        description=(
+            "a judge calibrated against labels fixed by construction (design §9): input "
+            "{question, answer, sources}, expected {label}; tag each case `construction`"
         ),
     ),
 }

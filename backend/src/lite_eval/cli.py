@@ -10,7 +10,7 @@ from typing import Annotated, NoReturn
 import typer
 
 from lite_eval import __version__
-from lite_eval.api import compare_runs, gate_results
+from lite_eval.api import compare_runs, export_kb, gate_results
 from lite_eval.contracts import AnnotationCategory
 from lite_eval.errors import ConfigError, LiteEvalError
 from lite_eval.report.terminal import render_comparison, render_gate, render_run
@@ -24,6 +24,8 @@ baseline_app = typer.Typer(
 app.add_typer(baseline_app, name="baseline")
 dataset_app = typer.Typer(no_args_is_help=True, help="Import external benchmarks as datasets.")
 app.add_typer(dataset_app, name="dataset")
+export_app = typer.Typer(no_args_is_help=True, help="Export run results to other places.")
+app.add_typer(export_app, name="export")
 
 
 def _print_version(value: bool) -> None:
@@ -50,7 +52,7 @@ def main(
 def _finish(results: list[RunResult], gate: bool = False) -> None:
     """Exit codes in the order of design §18.4: 3 run failed, then 1 gate failed, else 0."""
     for r in results:
-        typer.echo(render_run(r.record, str(r.directory)))
+        typer.echo(render_run(r.record, str(r.directory), r.scores))
     if any(r.record.status == "failed" for r in results):
         typer.echo("run failed: no case was scored", err=True)
         raise typer.Exit(3)
@@ -351,3 +353,15 @@ def report(
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(page, encoding="utf-8")
     typer.echo(f"wrote {out} ({len(page.encode()) // 1024} KB)")
+
+
+@export_app.command("kb")
+def export_kb_command(
+    runs: Annotated[list[Path], typer.Argument(help="Run directories of one suite.")],
+) -> None:
+    """Rows for the KB's llm-evals results.jsonl, one per run and metric (stdout); the suite's
+    `kb:` section names the eval card, task, dataset, grader and the metrics to export."""
+    try:
+        typer.echo(export_kb(runs), nl=False)
+    except LiteEvalError as exc:
+        _fail(exc)

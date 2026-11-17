@@ -1,16 +1,21 @@
 """Plain-text run report for the terminal (design §8.1): numbers, doubt and errors side by side."""
 
 from collections import Counter
+from collections.abc import Sequence
 
 from lite_eval.analysis.gate import GateOutcome
-from lite_eval.contracts import Comparison, RunRecord
+from lite_eval.analysis.judging import confusion
+from lite_eval.contracts import Comparison, RunRecord, Score
 
 
 def _fmt(x: float | None, digits: int = 3) -> str:
     return "-" if x is None else f"{x:.{digits}f}"
 
 
-def render_run(record: RunRecord, directory: str | None = None) -> str:
+def render_run(
+    record: RunRecord, directory: str | None = None, scores: Sequence[Score] = ()
+) -> str:
+    """`scores`: for a calibration run, the agreement matrix is read from them (design §9)."""
     s, c = record.summary, record.cost
     lines = [
         f"run {record.run_id}  [{record.status}]",
@@ -40,6 +45,17 @@ def render_run(record: RunRecord, directory: str | None = None) -> str:
         + (f", usage unknown for {c.usage_unknown}" if c.usage_unknown else "")
         + f" · latency p50 {_fmt(c.latency_p50_ms, 1)} ms, p95 {_fmt(c.latency_p95_ms, 1)} ms"
     )
+    if c.judge_calls:
+        lines.append(
+            f"  judges: {c.judge_calls} calls, tokens in {c.judge_input_tokens} / out "
+            f"{c.judge_output_tokens} (reasoning {c.judge_reasoning_tokens}), "
+            f"${c.judge_cost_usd:.4f}"
+        )
+    matrix = confusion(scores)
+    if matrix:
+        lines.append("  agreement matrix (expected -> judged):")
+        for (expected, got), n in sorted(matrix.items()):
+            lines.append(f"    {expected} -> {got}: {n}")
     lines.append(f"  cache: {record.cache.hits} hits, {record.cache.misses} generated")
     for w in record.warnings:
         lines.append(f"  WARNING {w.code}: {w.message}")

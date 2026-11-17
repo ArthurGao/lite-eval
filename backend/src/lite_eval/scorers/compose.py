@@ -10,14 +10,18 @@ scorer has one id however it was written.
 """
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Any
 
 from lite_eval.contracts import Case, Output, Score, Verdict
 from lite_eval.errors import ConfigError
+from lite_eval.judges.spec import JudgeSpec
 from lite_eval.scorers.base import Scorer, Spec, safe_score, spec_name
 from lite_eval.scorers.deterministic import deterministic
+from lite_eval.scorers.judge import JudgeScorer, judge_scorer
+from lite_eval.scorers.judging import judging_scorer
 from lite_eval.scorers.memory import memory_scorer
 from lite_eval.scorers.ranking import rank_scorer
 
@@ -81,13 +85,20 @@ class Composite:
         )
 
 
-def _composite(op: str, items: Any) -> Composite:
+def _child(spec: Any, judges: Mapping[str, JudgeSpec] | None) -> Scorer:
+    scorer = build_scorer(spec, judges)
+    if isinstance(scorer, JudgeScorer):  # composites score synchronously (design §18.24)
+        raise ConfigError(f"a model judge cannot be part of a composite: {scorer.name}")
+    return scorer
+
+
+def _composite(op: str, items: Any, judges: Mapping[str, JudgeSpec] | None) -> Composite:
     if not isinstance(items, list) or not items:
         raise ConfigError(f"{op} needs a non-empty list")
     if op != "weighted":
-        return Composite(op, tuple(build_scorer(i) for i in items))
+        return Composite(op, tuple(_child(i, judges) for i in items))
     try:
-        children = tuple(build_scorer(i["scorer"]) for i in items)
+        children = tuple(_child(i["scorer"], judges) for i in items)
         weights = tuple(float(i["weight"]) for i in items)
     except (KeyError, TypeError, ValueError) as exc:
         raise ConfigError(f"weighted items must be {{scorer, weight}}: {exc}") from exc
@@ -96,29 +107,33 @@ def _composite(op: str, items: Any) -> Composite:
     return Composite(op, children, weights)
 
 
-def _leaf(kind: str, params: dict[str, Any]) -> Scorer:
-    for family in (rank_scorer, memory_scorer):
+def _leaf(kind: str, params: dict[str, Any], judges: Mapping[str, JudgeSpec] | None) -> Scorer:
+    judge = judge_scorer(kind, params, judges)
+    if judge is not None:
+        return judge
+    for family in (rank_scorer, memory_scorer, judging_scorer):
         scorer = family(kind, params)
         if scorer is not None:
             return scorer
     return deterministic(kind, params)
 
 
-def build_scorer(spec: Any) -> Scorer:
+def build_scorer(spec: Any, judges: Mapping[str, JudgeSpec] | None = None) -> Scorer:
+    """`judges`: the suite's role -> model map, for `judge` scorers (design §9)."""
     if isinstance(spec, str):
-        return _leaf(spec, {})
+        return _leaf(spec, {}, judges)
     if not isinstance(spec, dict) or not spec:
         raise ConfigError(f"invalid scorer spec {spec!r}")
     if "name" in spec:
-        return _leaf(str(spec["name"]), {k: v for k, v in spec.items() if k != "name"})
+        return _leaf(str(spec["name"]), {k: v for k, v in spec.items() if k != "name"}, judges)
     if len(spec) != 1:
         raise ConfigError(f"scorer spec must have `name` or exactly one key: {spec!r}")
     ((key, value),) = spec.items()
     if key in _COMPOSITES:
-        return _composite(key, value)
+        return _composite(key, value, judges)
     if not isinstance(value, dict):
         raise ConfigError(f"scorer {key!r}: params must be a mapping, got {value!r}")
-    return _leaf(key, value)
+    return _leaf(key, value, judges)
 
 
 def parse_scorer_id(text: str) -> Spec:
