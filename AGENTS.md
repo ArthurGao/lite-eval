@@ -43,7 +43,8 @@ LongMemEval on lite-eval (oracle, S and M measured). **E4c (2026-11-14)**: llm-s
 lite-eval (its P8). **E4d (2026-11-14)**: secrets masked by value (`Target.secrets()`), gate rules per config
 (`configs:`), gate metrics `errors` / `error_rate` / `scoring_errors`. **E5a (2026-11-18)**: model
 judges (Ollama / OpenAI-compatible), calibration runs, extraction / grounded / judging packs, `export kb`
-(design §18.24). Next: E5b (lite-rag S13, the grounded judge on qwen3:8b); design §16.
+(design §18.24). **E5b (2026-11-18)**: lite-rag S13 calibrates qwen3:8b as its grounded judge (0.982 with
+thinking on; a coarse filter, not a gate). Next: E6 agent (when an agent app needs it) or E7 close-out; design §16.
 
 ## Rules
 
