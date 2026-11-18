@@ -14,7 +14,7 @@ one question for any system you can call: **did this change make it better or wo
   reported as one. Gates exit non-zero in CI.
 - **A local Viewer** for runs, comparisons, every case's trace, miss triage, datasets and trends.
 
-Status: v0.3 (2026-11-18). Used by [lite-rag](https://github.com/ArthurGao/lite-rag) (retrieval, grounded-answer
+Status: v0.4 (2026-11-18). Used by [lite-rag](https://github.com/ArthurGao/lite-rag) (retrieval, grounded-answer
 judge), [lite-mem](https://github.com/ArthurGao/lite-mem) (memory, LongMemEval) and llm-steward (a recall gate).
 Design and decisions: [`docs/lite-eval-design.md`](docs/lite-eval-design.md).
 
@@ -26,7 +26,7 @@ lite-eval is not on PyPI. Each release attaches a wheel (with the Viewer built i
 ```toml
 # pyproject.toml
 [tool.uv.sources]
-lite-eval = { url = "https://github.com/ArthurGao/lite-eval/releases/download/v0.3.1/lite_eval-0.3.1-py3-none-any.whl" }
+lite-eval = { url = "https://github.com/ArthurGao/lite-eval/releases/download/v0.4.0/lite_eval-0.4.0-py3-none-any.whl" }
 ```
 
 Python 3.12. Installing from a git commit also works, but without the Viewer (its build is not in git).

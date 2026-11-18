@@ -1,6 +1,6 @@
 [project]
 name = "lite-eval"
-version = "0.3.1"
+version = "0.4.0"
 description = "A general evaluation module for AI applications: generate once, score many, honest comparisons and gates"
 readme = "README.md"
 license = "Apache-2.0"
