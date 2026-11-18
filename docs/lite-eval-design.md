@@ -957,6 +957,19 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
   - 发现的 lite-eval 问题（留作后续）：`export kb` 的日期取运行 ID 的 UTC 日期，新西兰上午的运行会记成前一天；这次两行手改成本地日期 2026-11-18。已修（2026-11-18）：Suite 的 `kb.timezone`（§18.24），先写了失败的测试。
   - Codex：第一轮（初版）采纳 6 条（插入的句子或换来的回答可能就在来源里；语言按文字判断改为取 golden 集的 `lang`；`calibrated_judge` 不查规则；检索数据集的 `dataset.yaml` 字节不能变；校准运行路径；语言测试太松），各先写失败的测试。第二轮（手写改法和真实切片）采纳 3 条：手写行重复题号、真实行未知标签、真实行重复 ID，都改为报错并先写失败的测试；不采纳 1 条（"测试要证明手写的矛盾句确实和来源矛盾"：机器判断不了，这批句子标明等 owner 检查）。
   - 验证：lite-rag ruff、format、mypy 通过，pytest 500 passed；改坏脚本 22/22 变红；KB 检查全部通过；lite-rag CI 通过；Ollama 已停。
+- **E7 收尾（2026-11-18，起点 `f4ec111`）**：
+  - README 重写（原来还写着"只有设计"）：是什么、按 URL 装 Release wheel、用 `backend/examples` 跑第一次和对比（对比如实说 n=3 不显著）、命令表、退出码、pack、开发命令。
+  - 发布方式（owner 定）：不发 PyPI，继续用 GitHub Release 的 wheel（§17）。
+  - 全仓库 /simplify（复用、简化、效率、层次四个审查，约 46 条，去重后采纳下面这些）：
+    - runner：目标调用和评审调用共用一个重试循环 `_attempts`（E5a 留到 E7 的那一条；预算停止和重试用完的提示仍然分开）；运行状态只剩一条规则 `_status(gen, judge_skipped)`；`_summary` 由运行和 rescore 共用；`--gate` 时评分器只建一次；`ascore_outputs` 去掉占位再回填的写法。
+    - `Redactor.warnings`（三处同样的遮盖合一）；评分器的 `make_score`（六个评分器各自填身份字段）；CLI 的 `_errors` 装饰器代替十处 try/except（任何命令里的 LiteEvalError 都按退出码退出，不再有漏掉的变成 traceback）；文件哈希走 `canonical.file_sha256`，对比的种子走 `sha256_hex`；`env:<NAME>` 密钥命名只在 `redact.env_secrets` 一处；`RunRecord.config_name`（只读属性，不是新字段，五处各自推导、三种不同的缺省值合一）；`window` 只在 index 一处；`views.comparison` 去掉没人传的参数；`baseline set` 不再读 outputs.jsonl。
+    - Viewer 效率：一次运行和它的逐题结果按 run.json 的修改时间缓存（看用例时每个请求原来都要重读这次运行和同一数据集的所有其他运行；导出两次运行的 HTML 原来每个用例都重读另一次运行）；`detail()` 逐题的 outputs、scores 预先分组（原来每题扫一遍整个运行）；数据集页的完整加载（含语料哈希，LongMemEval M 有几 GB）按文件的大小和修改时间缓存。两种缓存各有测试，先看到去掉缓存、忽略修改时间两种改坏都变红。
+    - 前端：查询的 key 和参数都在 `data/queries.ts`（数据集、数据集用例、趋势原来是内联的；标注保存后失效的 key 也从那里取）；`Loaded` 组件代替十处"加载中 / 出错 / 数据"三元式；检索命中的分数用 `metric()` 格式化；数据集查询 staleTime 5 分钟、窗口聚焦不重取。顺带修了 `metric()` 吞掉负号的 bug（先写失败的测试）。
+    - 不采纳（记下理由）：评分器计划对象 `plan_scorers`、Target 可选成员改成基类默认值（Python 工厂的 Target 是用户代码，`getattr` 读可选成员是协议的一部分）、Viewer 选择器的目录接口和 SQLite 逐题表、索引里用 SQL 过滤、评审和生成流水线并行、不同 setup 组并行（预算耗尽时跳过哪些会依赖时序）、校准混淆矩阵进 `RunSummary`（契约字段，等 Viewer 要显示时再加）、KB 导出的 vendor / model / effort 改由 `info()` 提供（要兄弟项目一起改）、语料并行哈希（正确但收益只在超大语料）：都是较大的重新设计，收益不抵改动。
+  - 修的 bug（各先写失败的测试）：CI 里放行了付费评审时，免费 Target 的运行记录 `paid_allowed` 仍是 false（§18.13 要求如实记下放行）；前端数据集用例查询的 key 漏了 `limit`（Codex 发现；目前只有一个固定 limit 的调用方，属于潜在问题）。
+  - Codex（全仓库只读审查）：只有上面 `limit` 一条；失败计数和状态、输出缓存的键、Viewer 缓存、脱敏和 HTML 导出、Viewer 安全和路径、统计和门禁、CI 计费守卫、CLI 退出码都检查过，没有问题。
+  - 改坏脚本：E7 的 14 处改动，第一轮 12 处变红；没变红的两处（预算停在第三次重试时的提示、scores.jsonl 的顺序）补了测试后 14/14 变红，源码复原。
+  - 验证：ruff、format、mypy；pytest 525 passed（锁定版本、`CI=true`、最低声明版本）；`-m kb` 通过；`openapi.json` 是最新的；前端 typecheck、lint、test（19）、build、e2e（8）通过。
 
 ## 17. 已定的开工问题（2026-11-13）
 
@@ -968,6 +981,7 @@ Viewer 留在 v1 里，是因为 miss 归类（L1，第一条经验）要靠它�
 - **发布方式**：v1 不发 PyPI。前端构建产物在 gitignore 里，直接从 git 安装会缺少 Viewer，所以 CI 打包任务（§18.14）把带前端的 wheel
   作为 GitHub Release 的附件发布，使用方按版本号安装这个 wheel。仅从 git 按提交安装也可以，但只能用 API 和 CLI，`lite-eval view`
   会给出 §18.14 的“先构建前端”错误。E7 再决定是否发 PyPI。
+  E7 定（owner，2026-11-18）：不发 PyPI，继续用 GitHub Release 附带的 wheel；三个兄弟项目都按 URL 装这个 wheel，目前也没有别的使用方。
 
 ## 18. 规格细节（实现时以此为准）
 
