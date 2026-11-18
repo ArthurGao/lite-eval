@@ -20,7 +20,7 @@ from typing import Any
 
 from lite_eval.contracts import Case, Output, Score, Verdict
 from lite_eval.errors import ConfigError
-from lite_eval.scorers.base import Spec, spec_name
+from lite_eval.scorers.base import Spec, make_score, spec_name
 from lite_eval.scorers.deterministic import get_path
 
 NAME = re.compile(r"^(?:hop([1-9][0-9]*)|all_hops)$")
@@ -87,11 +87,9 @@ class HopScorer:
             memory = _found(memories, hops[self.hop - 1])
             ok = memory is not None
             reason, evidence = ("found" if ok else "not found"), {"memory": memory}
-        return Score(
-            case_id=output.case_id,
-            repeat=output.repeat,
-            scorer=self.name,
-            scorer_version=self.version,
+        return make_score(
+            self,
+            output,
             value=float(ok),
             passed=ok,
             reason=reason,

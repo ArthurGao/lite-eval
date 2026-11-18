@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import type { UseQueryResult } from '@tanstack/react-query'
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, Equal, Minus, Ban } from 'lucide-react'
 import { ApiError } from '@/data/source'
 import { cn } from '@/lib/cn'
@@ -172,6 +173,21 @@ export function ErrorPanel({ error }: { error: unknown }) {
       <p className="mt-1 text-ink-2">{text}</p>
     </div>
   )
+}
+
+/** A query's three states: a skeleton while it loads, the error panel if it failed, else the page. */
+export function Loaded<T>({
+  query,
+  rows,
+  children,
+}: {
+  query: UseQueryResult<T>
+  rows?: number
+  children: (data: T) => ReactNode
+}) {
+  if (query.isPending) return <Skeleton rows={rows} />
+  if (query.isError) return <ErrorPanel error={query.error} />
+  return children(query.data)
 }
 
 /** An empty state that says what would fill it. */

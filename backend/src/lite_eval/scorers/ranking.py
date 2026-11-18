@@ -22,7 +22,7 @@ from typing import Any
 
 from lite_eval.contracts import Case, Output, Score, Verdict
 from lite_eval.errors import ConfigError
-from lite_eval.scorers.base import Spec, spec_name
+from lite_eval.scorers.base import Spec, make_score, spec_name
 from lite_eval.scorers.deterministic import get_path
 
 NAME = re.compile(r"^(hit|doc_hit|mrr|ndcg|recall)@([1-9][0-9]*)$")
@@ -134,11 +134,9 @@ class RankScorer:
         if not isinstance(hits, list) or not all(isinstance(h, dict) for h in hits):
             raise ValueError("retrieval output must be a list of hits ({doc, text, id?})")
         value, evidence = self._value(hits, get_path(case.expected, self.params.get("expected")))
-        return Score(
-            case_id=output.case_id,
-            repeat=output.repeat,
-            scorer=self.name,
-            scorer_version=self.version,
+        return make_score(
+            self,
+            output,
             value=value,
             passed=(value == 1.0) if self.verdict == "value" else None,
             reason=f"{self.metric}@{self.k} = {value:g}",

@@ -142,7 +142,7 @@ def evaluate_gate(
     failures: list[str] = []
     if record.status == "partial" and not spec.allow_partial:
         failures.append("the run is partial (budget reached); set gate.allow_partial to accept it")
-    config = str(record.target.config.get("name", ""))
+    config = record.config_name
     rules = [rule for rule in spec.rules if rule.applies_to(config)]
     for rule in rules:
         if rule.compare_to is None:

@@ -13,7 +13,7 @@ from typing import Any
 from lite_eval.canonical import canonical_json
 from lite_eval.contracts import Case, Output, Score, Verdict
 from lite_eval.errors import ConfigError
-from lite_eval.scorers.base import Spec, spec_name
+from lite_eval.scorers.base import Spec, make_score, spec_name
 
 
 def get_path(value: Any, path: str | None) -> Any:
@@ -70,11 +70,9 @@ class _Deterministic:
         got = get_path(output.value, self.params.get("field"))
         want = get_path(case.expected, self.params.get("expected"))
         value, passed, reason, evidence = self.judge(got, want, self.params)
-        return Score(
-            case_id=output.case_id,
-            repeat=output.repeat,
-            scorer=self.name,
-            scorer_version=self.version,
+        return make_score(
+            self,
+            output,
             value=value,
             passed=passed,
             reason=reason,

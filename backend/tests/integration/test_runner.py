@@ -213,6 +213,19 @@ def test_transport_errors_are_retried_with_capped_backoff(tmp_path: Path) -> Non
     assert target.warmups == 1
 
 
+def test_a_retry_the_budget_stops_says_so_not_that_retries_ran_out(tmp_path: Path) -> None:
+    """Four calls in the budget: the warm-up and three tries of q1. Its error names the budget,
+    not the retry limit, although one try short of it (the message is the only trace)."""
+    target = FakeTarget(steps={"q1": Step(transport_failures=9)})
+    (result,) = run(tmp_path, [("a", target)], budget={"max_calls": 4}, concurrency=1)
+
+    outputs = {o.case_id: o for o in load_run(result.directory).outputs}
+    assert target.calls["q1"] == 3
+    assert outputs["q1"].error is not None
+    assert outputs["q1"].error.message.startswith("transport error and the budget allows no retry")
+    assert result.record.status == "partial"
+
+
 def test_backoff_exponent_is_capped() -> None:
     assert [backoff_s(a, 0.5, 8.0) for a in range(6)] == [0.5, 1.0, 2.0, 4.0, 8.0, 8.0]
     assert backoff_s(10_000, 0.5, 8.0) == 8.0  # no overflow (design §3 L31)
@@ -640,3 +653,15 @@ def test_a_declared_secret_in_the_target_config_or_description_is_masked(tmp_pat
         sys.path.remove(str(tmp_path))
         sys.modules.pop("secret_target", None)
     assert lines == ["config a: calls the service with «redacted:env:SERVICE_KEY»"]
+
+
+def test_scores_are_written_output_by_output_with_every_scorer_in_suite_order(
+    tmp_path: Path,
+) -> None:
+    """scores.jsonl is in a fixed order (each output, then the suite's scorers), so the same run
+    writes the same bytes and a reader can rely on it."""
+    (result,) = run(tmp_path, [("a", FakeTarget())], scorers=["exact_match", "contains"])
+
+    written = [(s.case_id, s.scorer) for s in load_run(result.directory).scores]
+    cases = sorted({case_id for case_id, _ in written})
+    assert written == [(c, s) for c in cases for s in ("exact_match", "contains")]

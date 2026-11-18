@@ -10,7 +10,8 @@ function digits(value: number): string {
 }
 
 export function metric(value: number | null | undefined): string {
-  return value == null ? '—' : digits(value)
+  if (value == null) return '—'
+  return `${value < 0 ? '-' : ''}${digits(value)}`
 }
 
 export function delta(value: number | null | undefined): string {

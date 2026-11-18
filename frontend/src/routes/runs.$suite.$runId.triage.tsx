@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { AnnotateDialog, CATEGORIES, type Category, categoryWord } from '@/components/annotate'
 import { Outcome } from '@/components/cases'
 import { ContentNote, FailingScores, OutputBody, SideBySide, Value } from '@/components/detail'
-import { Button, Empty, ErrorPanel, Kbd, KeyHints, Section, Skeleton } from '@/components/ui'
+import { Button, Empty, ErrorPanel, Kbd, KeyHints, Loaded, Section, Skeleton } from '@/components/ui'
 import { useData } from '@/data/context'
 import { cn } from '@/lib/cn'
 import { useListKeys, useShortcuts } from '@/lib/keys'
@@ -120,42 +120,40 @@ function TriagePage() {
                 </div>
               </div>
             )}
-            {detail.isPending ? (
-              <Skeleton />
-            ) : detail.isError ? (
-              <ErrorPanel error={detail.error} />
-            ) : (
-              <>
-                <ContentNote status={detail.data.content.status} />
-                <FailingScores scores={detail.data.scores ?? []} output={detail.data.outputs?.[0]} />
-                <SideBySide
-                  panes={[
-                    { title: 'Input', body: <Value value={detail.data.content.case?.input} /> },
-                    { title: 'Expected', body: <Value value={detail.data.content.case?.expected} /> },
-                    { title: 'Output', body: <OutputBody output={detail.data.outputs?.[0]} /> },
-                  ]}
-                />
-                {dialog && (
-                  <AnnotateDialog
-                    key={`${row!.case_id}:${dialog}`}
-                    open
-                    onOpenChange={(open) => !open && setDialog(null)}
-                    initial={dialog}
-                    current={detail.data.annotation}
-                    target={{
-                      dataset: detail.data.dataset,
-                      case_id: detail.data.case_id,
-                      case_hash: detail.data.case_hash,
-                      run_id: runId,
-                    }}
-                    onSaved={() => {
-                      setSeen((s) => [...s, detail.data.case_id])
-                      setActive((i) => Math.min(i + 1, queue.length - 1))
-                    }}
+            <Loaded query={detail}>
+              {(d) => (
+                <>
+                  <ContentNote status={d.content.status} />
+                  <FailingScores scores={d.scores ?? []} output={d.outputs?.[0]} />
+                  <SideBySide
+                    panes={[
+                      { title: 'Input', body: <Value value={d.content.case?.input} /> },
+                      { title: 'Expected', body: <Value value={d.content.case?.expected} /> },
+                      { title: 'Output', body: <OutputBody output={d.outputs?.[0]} /> },
+                    ]}
                   />
-                )}
-              </>
-            )}
+                  {dialog && (
+                    <AnnotateDialog
+                      key={`${row!.case_id}:${dialog}`}
+                      open
+                      onOpenChange={(open) => !open && setDialog(null)}
+                      initial={dialog}
+                      current={d.annotation}
+                      target={{
+                        dataset: d.dataset,
+                        case_id: d.case_id,
+                        case_hash: d.case_hash,
+                        run_id: runId,
+                      }}
+                      onSaved={() => {
+                        setSeen((s) => [...s, d.case_id])
+                        setActive((i) => Math.min(i + 1, queue.length - 1))
+                      }}
+                    />
+                  )}
+                </>
+              )}
+            </Loaded>
           </div>
         </div>
       )}

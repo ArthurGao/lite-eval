@@ -16,7 +16,7 @@ import sqlite3
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import IO, Protocol
@@ -29,6 +29,12 @@ from lite_eval.store import read_baseline_changes, read_baselines, read_record, 
 
 INDEX_DIR = ".lite-eval"
 REFRESH_S = 5.0  # §18.15: rescan at most this often, when a query comes in
+
+
+def window[T](items: Sequence[T], offset: int, limit: int | None) -> tuple[list[T], int, int]:
+    """(page, offset, limit) of `items`; `limit=None` is every item."""
+    size = len(items) if limit is None else limit
+    return list(items[offset : offset + size]), offset, size
 
 
 class _Model(BaseModel):
@@ -118,7 +124,7 @@ def run_row(record: RunRecord) -> RunRow:
     return RunRow(
         suite=record.suite.name,
         run_id=record.run_id,
-        config=str(record.target.config.get("name", "")),
+        config=record.config_name,
         target=record.target.name,
         dataset=record.dataset.name,
         dataset_version=record.dataset.version,
@@ -178,10 +184,8 @@ class _Catalog:
 
     def list_runs(self, filters: RunFilter, offset: int = 0, limit: int | None = 50) -> RunPage:
         rows = [r for r in reversed(_marked(self.root, self._rows())) if _matches(r, filters)]
-        size = len(rows) if limit is None else limit
-        return RunPage(
-            items=rows[offset : offset + size], total=len(rows), offset=offset, limit=size
-        )
+        page, offset, size = window(rows, offset, limit)
+        return RunPage(items=page, total=len(rows), offset=offset, limit=size)
 
     def trend(self, suite: str, metric: str, config: str | None = None) -> Trend:
         rows = [

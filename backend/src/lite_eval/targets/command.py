@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
 from lite_eval.contracts import Case, ErrorInfo, Output, Trace
-from lite_eval.redact import KnownValues
+from lite_eval.redact import KnownValues, env_secrets
 from lite_eval.targets.base import MB, SpecBase, SpecIdentity, TargetError, current_repeat
 
 if TYPE_CHECKING:
@@ -112,11 +112,13 @@ class CommandTarget(SpecIdentity):
     def secrets(self) -> dict[str, str]:
         """The allowed variables that are secrets: `secret_env`, or names like SECRET_NAME."""
         listed = self.spec.secret_env
-        return {
-            f"env:{name}": value
-            for name, value in self._env().items()
-            if (name in listed if listed is not None else SECRET_NAME.search(name))
-        }
+        return env_secrets(
+            {
+                name: value
+                for name, value in self._env().items()
+                if (name in listed if listed is not None else SECRET_NAME.search(name))
+            }
+        )
 
     def _masked(self, line: bytes, *, strict: bool) -> str:
         """A line as text with the program's secrets masked, before anything cuts or quotes it

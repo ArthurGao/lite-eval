@@ -2,6 +2,11 @@ import { expect, test } from 'vitest'
 import { delta, metric, weight } from './format'
 import { typing } from './keys'
 
+test('a negative metric keeps its sign (a reranker score can be below zero)', () => {
+  expect(metric(-1.25)).toBe('-1.250')
+  expect(metric(-0.0004)).toBe('-0.00040')
+})
+
 test('a nonzero number never reads as zero', () => {
   expect(metric(0.75)).toBe('0.750')
   expect(metric(0.0004)).toBe('0.00040')

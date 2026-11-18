@@ -8,34 +8,75 @@ import type { DataSource, RunQuery } from './source'
  */
 const FOREVER = Infinity
 const ALL = 100_000 // every case of a run (the API allows this many)
+const DATASETS_STALE = 5 * 60_000 // the server hashes whole datasets per request
+
+/** The first element of every query key: a family to invalidate as a whole. */
+export const keys = {
+  run: 'run',
+  cases: 'cases',
+  case: 'case',
+  compare: 'compare',
+  runs: 'runs',
+  datasets: 'datasets',
+  datasetCases: 'dataset-cases',
+  trend: 'trend',
+} as const
 
 export const runQuery = (source: DataSource, suite: string, runId: string) =>
-  queryOptions({ queryKey: ['run', suite, runId], queryFn: () => source.getRun(suite, runId), staleTime: FOREVER })
+  queryOptions({ queryKey: [keys.run, suite, runId], queryFn: () => source.getRun(suite, runId), staleTime: FOREVER })
 
 export const casesQuery = (source: DataSource, suite: string, runId: string) =>
   queryOptions({
-    queryKey: ['cases', suite, runId],
+    queryKey: [keys.cases, suite, runId],
     queryFn: () => source.listCases(suite, runId, { limit: ALL }),
     staleTime: FOREVER,
   })
 
 export const caseQuery = (source: DataSource, suite: string, runId: string, caseId: string) =>
   queryOptions({
-    queryKey: ['case', suite, runId, caseId],
+    queryKey: [keys.case, suite, runId, caseId],
     queryFn: () => source.getCase(suite, runId, caseId),
     staleTime: FOREVER,
   })
 
 export const compareQuery = (source: DataSource, baseline: string, candidate: string) =>
   queryOptions({
-    queryKey: ['compare', baseline, candidate],
+    queryKey: [keys.compare, baseline, candidate],
     queryFn: () => source.compare(baseline, candidate),
     staleTime: FOREVER,
   })
 
 /** The runs list changes as new runs land: refreshed after a few seconds. */
 export const runsQuery = (source: DataSource, query: RunQuery) =>
-  queryOptions({ queryKey: ['runs', query], queryFn: () => source.listRuns(query), staleTime: 5_000 })
+  queryOptions({ queryKey: [keys.runs, query], queryFn: () => source.listRuns(query), staleTime: 5_000 })
 
 /** Every run (pickers on Compare and Trends). */
 export const allRunsQuery = (source: DataSource) => runsQuery(source, { limit: 500 })
+
+/**
+ * Datasets change only by an edit in git, and listing them hashes them on the server: kept for a
+ * while and not refetched on window focus. An annotation save invalidates dataset cases.
+ */
+export const datasetsQuery = (source: DataSource) =>
+  queryOptions({
+    queryKey: [keys.datasets],
+    queryFn: () => source.listDatasets(),
+    staleTime: DATASETS_STALE,
+    refetchOnWindowFocus: false,
+  })
+
+export const datasetCasesQuery = (source: DataSource, name: string, offset: number, limit: number) =>
+  queryOptions({
+    queryKey: [keys.datasetCases, name, offset, limit],
+    queryFn: () => source.listDatasetCases(name, offset, limit),
+    staleTime: DATASETS_STALE,
+    refetchOnWindowFocus: false,
+  })
+
+/** One metric of one config over a suite's runs; waits until a suite and a metric are chosen. */
+export const trendQuery = (source: DataSource, suite: string | undefined, metric: string | undefined, config: string | undefined) =>
+  queryOptions({
+    queryKey: [keys.trend, suite, metric, config],
+    queryFn: () => source.trend(suite!, metric!, config),
+    enabled: Boolean(suite && metric),
+  })

@@ -22,7 +22,7 @@ from lite_eval.judges.calibration import Calibration
 from lite_eval.judges.client import JudgeClient, JudgeReply
 from lite_eval.judges.rubric import InvalidJudgeOutput, Rubric, get_rubric, view_of
 from lite_eval.judges.spec import JudgeSpec
-from lite_eval.scorers.base import Spec, spec_name
+from lite_eval.scorers.base import Spec, make_score, spec_name
 
 _PARAMS = {"rubric", "role", "calibration"}
 
@@ -89,11 +89,9 @@ class JudgeScorer:
             raise JudgedInvalid(str(exc), self._record(exc.reply)) from None
         record = self._record(reply)
         ok = verdict.verdict == self.rubric.passing
-        return Score(
-            case_id=output.case_id,
-            repeat=output.repeat,
-            scorer=self.name,
-            scorer_version=self.version,
+        return make_score(
+            self,
+            output,
             value=float(ok),
             passed=ok,
             reason=f"{verdict.verdict}: {verdict.reason}",

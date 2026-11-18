@@ -15,7 +15,7 @@ import httpx2
 
 from lite_eval.contracts import Usage
 from lite_eval.judges.spec import JudgeSpec
-from lite_eval.redact import KnownValues
+from lite_eval.redact import KnownValues, env_secrets
 from lite_eval.targets.base import TransportError
 from lite_eval.targets.http import resolve_env
 
@@ -60,7 +60,7 @@ class _HttpJudge:
         if spec.api_key_env:
             bearer = "Bearer ${" + spec.api_key_env + "}"
             headers["Authorization"] = resolve_env(bearer, f"judge {spec.model}", used)
-        self.secrets = {f"env:{name}": value for name, value in used.items()}
+        self.secrets = env_secrets(used)
         self._known = KnownValues(self.secrets)
         self._http = httpx2.AsyncClient(
             base_url=spec.base_url.rstrip("/"),

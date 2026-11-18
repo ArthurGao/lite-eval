@@ -17,6 +17,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -26,9 +27,9 @@ from lite_eval.analysis.compare import compare
 from lite_eval.analysis.summary import CaseResult, case_results
 from lite_eval.annotations import Key, current_annotations, read_annotations
 from lite_eval.contracts import Annotation, Case, Comparison, Output, RunRecord, Score
-from lite_eval.datasets.local import load_dataset, read_cases, read_meta
+from lite_eval.datasets.local import Dataset, load_dataset, read_cases, read_meta
 from lite_eval.errors import ConfigError, NotFound
-from lite_eval.index import RunCatalog, RunFilter, RunRow
+from lite_eval.index import RunCatalog, RunFilter, RunRow, window
 from lite_eval.redact import Redactor
 from lite_eval.store import StoredRun, load_run, read_baselines, read_record, run_path
 
@@ -141,12 +142,6 @@ class ExportPayload(_Model):
     comparison: Comparison | None
 
 
-def window[T](items: Sequence[T], offset: int, limit: int | None) -> tuple[list[T], int, int]:
-    """(page, offset, limit) of `items`; `limit=None` is every item."""
-    size = len(items) if limit is None else limit
-    return list(items[offset : offset + size]), offset, size
-
-
 # ---------------------------------------------------------------- loading
 
 
@@ -186,6 +181,22 @@ class RunView:
     def record(self) -> RunRecord:
         return self.stored.record
 
+    @cached_property
+    def order(self) -> dict[str, int]:
+        """Each case's position, for prev / next without a scan per case."""
+        return {case_id: i for i, case_id in enumerate(self.results)}
+
+    @cached_property
+    def by_case(self) -> dict[str, tuple[list[Output], list[Score]]]:
+        """Outputs and scores grouped once: a loop over cases (triage, the export) would
+        otherwise scan the whole run per case."""
+        grouped: dict[str, tuple[list[Output], list[Score]]] = defaultdict(lambda: ([], []))
+        for o in self.stored.outputs:
+            grouped[o.case_id][0].append(o)
+        for sc in self.stored.scores:
+            grouped[sc.case_id][1].append(sc)
+        return dict(grouped)
+
 
 def _dataset_dir(root: Path, name: str) -> Path | None:
     """The directory under `<root>/datasets/` whose dataset.yaml names `name` (reads only the
@@ -209,14 +220,34 @@ def _cases(root: Path, name: str) -> dict[str, Case]:
         return {}
 
 
+def _stamp(directory: Path) -> int:
+    """A finished run never changes (run.json is written last); its mtime keys the caches, so a
+    run directory replaced under the same name is read again."""
+    return (directory / "run.json").stat().st_mtime_ns
+
+
+@lru_cache(maxsize=8)
+def _loaded(directory: Path, stamp: int) -> tuple[StoredRun, dict[str, CaseResult]]:
+    """A run and its per-case results, kept for the next request on the same run (the Viewer
+    steps through cases one request at a time). Callers only read what this returns."""
+    stored = load_run(directory, outputs=True)
+    return stored, case_results(stored.record, stored.outputs, stored.scores)
+
+
+@lru_cache(maxsize=256)
+def _record(directory: Path, stamp: int) -> RunRecord:
+    return read_record(directory)
+
+
 def open_run(root: Path, suite: str, run_id: str, redactor: Redactor | None = None) -> RunView:
-    stored = load_run(run_path(root, suite, run_id), outputs=True)
+    directory = run_path(root, suite, run_id)
+    stored, results = _loaded(directory, _stamp(directory))
     record = stored.record
     return RunView(
         root=root,
         stored=stored,
         cases=_cases(root, record.dataset.name),
-        results=case_results(record, stored.outputs, stored.scores),
+        results=results,
         redactor=redactor or Redactor.from_config(record.redact),
     )
 
@@ -231,7 +262,7 @@ def redacted_record(record: RunRecord, redactor: Redactor) -> RunRecord:
             "info": {k: redactor.text(v) for k, v in record.target.info.items()},
         }
     )
-    warnings = [w.model_copy(update={"message": redactor.text(w.message)}) for w in record.warnings]
+    warnings = redactor.warnings(record.warnings)
     return record.model_copy(update={"target": target, "warnings": warnings})
 
 
@@ -277,9 +308,10 @@ def detail(
         raise NotFound(f"run {record.suite.name}/{record.run_id} has no case {case_id!r}")
     case_hash = record.case_hashes.get(case_id, "")
     dataset = record.dataset.name
-    order = list(view.results)
-    at = order.index(case_id)
+    order = list(view.order)
+    at = view.order[case_id]
     result = view.results[case_id]
+    outputs, scores = view.by_case.get(case_id, ([], []))
     return CaseDetail(
         suite=record.suite.name,
         run_id=record.run_id,
@@ -291,8 +323,8 @@ def detail(
         prev_case_id=order[at - 1] if at > 0 else None,
         next_case_id=order[at + 1] if at + 1 < len(order) else None,
         content=_content(view.cases.get(case_id), case_hash),
-        outputs=[view.redactor.output(o) for o in view.stored.outputs if o.case_id == case_id],
-        scores=[view.redactor.score(s) for s in view.stored.scores if s.case_id == case_id],
+        outputs=[view.redactor.output(o) for o in outputs],
+        scores=[view.redactor.score(s) for s in scores],
         annotation=notes.get(dataset, case_id, case_hash),
         older_annotations=notes.older(dataset, case_id, case_hash),
         other_runs=_other_runs(view, case_id, case_hash, candidates),
@@ -311,12 +343,13 @@ def _other_runs(
             continue
         try:
             directory = run_path(view.root, row.suite, row.run_id)
-            if read_record(directory).case_hashes.get(case_id) != case_hash:
+            stamp = _stamp(directory)
+            if _record(directory, stamp).case_hashes.get(case_id) != case_hash:
                 continue
-            other = load_run(directory, outputs=True)
-        except ConfigError:
+            _, results = _loaded(directory, stamp)
+        except (ConfigError, OSError):
             continue  # vanished since it was listed
-        result = case_results(other.record, other.outputs, other.scores)[case_id]
+        result = results[case_id]
         out.append(
             OtherRun(
                 suite=row.suite,
@@ -381,20 +414,19 @@ def comparison(
     root: Path,
     baseline: tuple[str, str],
     candidate: tuple[str, str],
-    redactor: Redactor | None = None,
 ) -> Comparison:
     """`compare` of two runs named by (suite, run_id): baseline first. Warnings are redacted
-    with both runs' rules unless `redactor` is given."""
+    with both runs' rules."""
     a = load_run(run_path(root, *baseline), outputs=False)
     b = load_run(run_path(root, *candidate), outputs=False)
-    return compare_loaded(a, b, redactor)
+    return compare_loaded(a, b)
 
 
 def compare_loaded(a: StoredRun, b: StoredRun, redactor: Redactor | None = None) -> Comparison:
     """`compare` of two loaded runs, wherever each lives (the export may pair two roots)."""
     c = compare(a.record, a.scores, b.record, b.scores)
     redactor = redactor or union([a.record, b.record])
-    warnings = [w.model_copy(update={"message": redactor.text(w.message)}) for w in c.warnings]
+    warnings = redactor.warnings(c.warnings)
     return c.model_copy(update={"warnings": warnings})
 
 
@@ -413,8 +445,24 @@ def union(records: Sequence[RunRecord], extra: Sequence[str] = ()) -> Redactor:
 # ---------------------------------------------------------------- datasets
 
 
+def _files(directory: Path) -> tuple[tuple[str, int, int], ...]:
+    """Every file of a dataset with its size and mtime: what decides its hash, cheap to read."""
+    return tuple(
+        (path.relative_to(directory).as_posix(), st.st_size, st.st_mtime_ns)
+        for path in sorted(directory.rglob("*"))
+        if path.is_file() and (st := path.stat())
+    )
+
+
+@lru_cache(maxsize=16)
+def _dataset(directory: Path, files: tuple[tuple[str, int, int], ...]) -> Dataset:
+    """A dataset loaded once while its files are unchanged: the full load hashes the corpus
+    (gigabytes for LongMemEval M) and the Viewer asks again on every page."""
+    return load_dataset(directory)
+
+
 def _summary(root: Path, directory: Path) -> tuple[DatasetSummary, dict[str, str], list[Case]]:
-    d = load_dataset(directory)  # the page shows the dataset hash: the full load is needed
+    d = _dataset(directory, _files(directory))  # the page shows the hash: a full load
     summary = DatasetSummary(
         **d.ref.model_dump(),
         description=d.meta.description,

@@ -4,7 +4,7 @@ import { GitCompareArrows, ListChecks } from 'lucide-react'
 import type { RunRecord } from '@/client/types.gen'
 import { CaseTable } from '@/components/cases'
 import { RunMarks } from '@/components/marks'
-import { Empty, ErrorPanel, Scroll, Section, Skeleton, WarningsList, buttonClass } from '@/components/ui'
+import { Empty, Loaded, Scroll, Section, WarningsList, buttonClass } from '@/components/ui'
 import { useData } from '@/data/context'
 import { casesQuery, runQuery, runsQuery } from '@/data/queries'
 import { configName, metric, ms, shortHash, shortSha, usd, weight, when } from '@/lib/format'
@@ -27,68 +27,72 @@ function RunPage() {
   const cases = useQuery(casesQuery(source, suite, runId))
   const baseline = useQuery({ ...runsQuery(source, { suite, baseline: true, limit: 1 }), enabled: source.mode === 'live' })
 
-  if (run.isPending) return <Skeleton rows={10} />
-  if (run.isError) return <ErrorPanel error={run.error} />
-  const rec = run.data.record
-  const base = baseline.data?.items[0]
-  const misses = cases.data?.items.filter((r) => r.miss).length ?? 0
-
   return (
-    <div className="space-y-4">
-      <RunHeader record={rec} baseline={run.data.baseline} />
-      <div className="flex flex-wrap gap-2">
-        {misses > 0 && (
-          <Link
-            to="/runs/$suite/$runId/triage"
-            params={{ suite, runId }}
-            className={buttonClass('primary')}
-          >
-            <ListChecks aria-hidden className="size-3.5" />
-            Triage {misses} {misses === 1 ? 'miss' : 'misses'}
-          </Link>
-        )}
-        {base && base.run_id !== runId && (
-          <Link
-            to="/compare"
-            search={{ baseline: `${suite}/${base.run_id}`, candidate: `${suite}/${runId}` }}
-            className={buttonClass('quiet')}
-          >
-            <GitCompareArrows aria-hidden className="size-3.5" />
-            Compare with baseline ({base.config})
-          </Link>
-        )}
-      </div>
+    <Loaded query={run} rows={10}>
+      {(data) => {
+        const rec = data.record
+        const base = baseline.data?.items[0]
+        const misses = cases.data?.items.filter((r) => r.miss).length ?? 0
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <Metrics record={rec} />
-        <Costs record={rec} />
-      </div>
+        return (
+          <div className="space-y-4">
+            <RunHeader record={rec} baseline={data.baseline} />
+            <div className="flex flex-wrap gap-2">
+              {misses > 0 && (
+                <Link
+                  to="/runs/$suite/$runId/triage"
+                  params={{ suite, runId }}
+                  className={buttonClass('primary')}
+                >
+                  <ListChecks aria-hidden className="size-3.5" />
+                  Triage {misses} {misses === 1 ? 'miss' : 'misses'}
+                </Link>
+              )}
+              {base && base.run_id !== runId && (
+                <Link
+                  to="/compare"
+                  search={{ baseline: `${suite}/${base.run_id}`, candidate: `${suite}/${runId}` }}
+                  className={buttonClass('quiet')}
+                >
+                  <GitCompareArrows aria-hidden className="size-3.5" />
+                  Compare with baseline ({base.config})
+                </Link>
+              )}
+            </div>
 
-      <WarningsList warnings={rec.warnings ?? []} />
+            <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+              <Metrics record={rec} />
+              <Costs record={rec} />
+            </div>
 
-      <Section title={`Cases (${rec.summary.n_cases})`}>
-        {cases.isPending ? (
-          <Skeleton />
-        ) : cases.isError ? (
-          <ErrorPanel error={cases.error} />
-        ) : cases.data.items.length === 0 ? (
-          <Empty title="This run has no case results" />
-        ) : (
-          <CaseTable suite={suite} runId={runId} rows={cases.data.items} />
-        )}
-      </Section>
+            <WarningsList warnings={rec.warnings ?? []} />
 
-      <details className="rounded border border-rule bg-surface">
-        <summary className="cursor-pointer px-3 py-2 font-semibold">Configuration and versions</summary>
-        <pre className="max-h-[480px] overflow-auto border-t border-rule px-3 py-2 font-mono text-[12px] text-ink-2">
-          {JSON.stringify(
-            { target: rec.target, scorers: rec.scorers, dataset: rec.dataset, repeats: rec.repeats, seed: rec.seed, redact: rec.redact, gate: rec.gate, ci: rec.ci, cache: rec.cache },
-            null,
-            2,
-          )}
-        </pre>
-      </details>
-    </div>
+            <Section title={`Cases (${rec.summary.n_cases})`}>
+              <Loaded query={cases}>
+                {({ items }) =>
+                  items.length === 0 ? (
+                    <Empty title="This run has no case results" />
+                  ) : (
+                    <CaseTable suite={suite} runId={runId} rows={items} />
+                  )
+                }
+              </Loaded>
+            </Section>
+
+            <details className="rounded border border-rule bg-surface">
+              <summary className="cursor-pointer px-3 py-2 font-semibold">Configuration and versions</summary>
+              <pre className="max-h-[480px] overflow-auto border-t border-rule px-3 py-2 font-mono text-[12px] text-ink-2">
+                {JSON.stringify(
+                  { target: rec.target, scorers: rec.scorers, dataset: rec.dataset, repeats: rec.repeats, seed: rec.seed, redact: rec.redact, gate: rec.gate, ci: rec.ci, cache: rec.cache },
+                  null,
+                  2,
+                )}
+              </pre>
+            </details>
+          </div>
+        )
+      }}
+    </Loaded>
   )
 }
 

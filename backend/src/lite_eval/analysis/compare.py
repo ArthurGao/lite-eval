@@ -8,7 +8,6 @@ bootstrap seeded from the two run ids and the metric. Which metrics are pass / f
 the scorers' recorded verdicts, never from the values a run happened to produce.
 """
 
-import hashlib
 from collections.abc import Sequence
 from fractions import Fraction
 from math import comb
@@ -18,6 +17,7 @@ from typing import Any
 import numpy as np
 
 from lite_eval.analysis.summary import PASS_RATE, metric_values
+from lite_eval.canonical import sha256_hex
 from lite_eval.contracts import (
     CaseChange,
     CaseChangeKind,
@@ -46,7 +46,7 @@ def mcnemar_p(b: int, c: int) -> float:
 
 
 def bootstrap_seed(baseline_run: str, candidate_run: str, metric: str) -> int:
-    digest = hashlib.sha256(f"{baseline_run}|{candidate_run}|{metric}".encode()).hexdigest()
+    digest = sha256_hex(f"{baseline_run}|{candidate_run}|{metric}")
     return int(digest[:16], 16)
 
 
@@ -252,8 +252,8 @@ def compare(
     return Comparison(
         baseline_run=a.run_id,
         candidate_run=b.run_id,
-        baseline_config=str(a.target.config.get("name", "")),
-        candidate_config=str(b.target.config.get("name", "")),
+        baseline_config=a.config_name,
+        candidate_config=b.config_name,
         dataset=a.dataset.name,
         overlap=overlap,
         changed_cases=changed,

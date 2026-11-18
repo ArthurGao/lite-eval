@@ -7,7 +7,7 @@ from typing import Any
 
 from lite_eval.contracts import Case, Output, Score, Verdict
 from lite_eval.errors import ConfigError
-from lite_eval.scorers.base import Spec
+from lite_eval.scorers.base import Spec, make_score
 
 
 def _label(value: Any, where: str) -> str:
@@ -30,11 +30,9 @@ class LabelAgreement:
         expected = _label(case.expected, "expected")
         got = _label(output.value, "the judge's output")
         ok = got == expected
-        return Score(
-            case_id=output.case_id,
-            repeat=output.repeat,
-            scorer=self.name,
-            scorer_version=self.version,
+        return make_score(
+            self,
+            output,
             value=float(ok),
             passed=ok,
             reason="agrees" if ok else f"expected {expected}, got {got}",

@@ -18,7 +18,7 @@ from typing import Any
 from lite_eval.contracts import Case, Output, Score, Verdict
 from lite_eval.errors import ConfigError
 from lite_eval.judges.spec import JudgeSpec
-from lite_eval.scorers.base import Scorer, Spec, safe_score, spec_name
+from lite_eval.scorers.base import Scorer, Spec, make_score, safe_score, spec_name
 from lite_eval.scorers.deterministic import deterministic
 from lite_eval.scorers.judge import JudgeScorer, judge_scorer
 from lite_eval.scorers.judging import judging_scorer
@@ -73,11 +73,9 @@ class Composite:
                 self.weights
             )
             ok = None
-        return Score(
-            case_id=output.case_id,
-            repeat=output.repeat,
-            scorer=self.name,
-            scorer_version=self.version,
+        return make_score(
+            self,
+            output,
             value=value,
             passed=ok,
             reason=f"{self.op} of {len(scores)}",

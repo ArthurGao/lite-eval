@@ -103,6 +103,20 @@ def backoff_s(attempt: int, base: float, cap: float) -> float:
     return min(cap, base * 2.0 ** min(attempt, max_exponent))
 
 
+async def _attempts(
+    o: RunOptions, may_retry: Callable[[], bool] = lambda: True
+) -> AsyncIterator[int]:
+    """The retry policy shared by target and judge calls (AGENTS rule 5, design §3 L31): attempt
+    numbers 0..max_retries with the capped backoff before each retry. A caller retries by
+    continuing its loop; it stops early when `may_retry()` says no (the budget is spent)."""
+    for attempt in range(o.max_retries + 1):
+        if attempt:
+            if not may_retry():
+                return
+            await o.sleep(backoff_s(attempt - 1, o.retry_base_s, o.retry_max_s))
+        yield attempt
+
+
 # ---------------------------------------------------------------- phase 1: generate
 
 
@@ -203,24 +217,19 @@ class _Generator:
     async def _call(self, case: Case) -> Output | None:
         timeout = self.suite.spec.timeout_s
         o = self.options
-        for attempt in range(o.max_retries + 1):
+        tries, transport = 0, None
+        async for _ in _attempts(o, may_retry=lambda: not self.ledger.exhausted()):
             if self.ledger.exhausted():
                 return None
+            tries += 1
             self.ledger.calls += 1
             self.state.calls += 1
             started = time.perf_counter()
             try:
                 result = await asyncio.wait_for(self.target.run(case), timeout)
             except TransportError as exc:
-                if attempt < o.max_retries and not self.ledger.exhausted():
-                    await o.sleep(backoff_s(attempt, o.retry_base_s, o.retry_max_s))
-                    continue
-                why = (
-                    f"after {o.max_retries} retries"
-                    if attempt == o.max_retries
-                    else "and the budget allows no retry"
-                )
-                return _error_output(case, "exception", f"transport error {why}: {exc}")
+                transport = exc
+                continue
             except TimeoutError:
                 return _error_output(
                     case, "timeout", f"no reply within {timeout}s", latency_ms=timeout * 1000
@@ -254,7 +263,12 @@ class _Generator:
                     update={"case_id": case.id, "repeat": current_repeat.get(), "trace": trace}
                 )
             )
-        return None  # unreachable: the last attempt returns; kept for the type checker
+        why = (
+            f"after {o.max_retries} retries"
+            if tries > o.max_retries
+            else "and the budget allows no retry"
+        )
+        return _error_output(case, "exception", f"transport error {why}: {transport}")
 
     def _lookup(self, case: Case, repeat: int) -> tuple[str, Output | None]:
         ident = self.identity
@@ -361,8 +375,8 @@ class _Judging:
     async def score(self, scorer: JudgeScorer, case: Case, output: Output) -> Score:
         if output.error is not None:
             return failed(scorer, output, f"target error: {output.error.kind}")
-        o = self.options
-        for attempt in range(o.max_retries + 1):
+        outcome: Score | TransportError | None = None
+        async for _ in _attempts(self.options):
             # The budget check, the call and its charge share one slot, so a queued call sees
             # what the one before it spent; the backoff happens outside the slot.
             async with self.gate:
@@ -375,8 +389,6 @@ class _Judging:
                 outcome = await self._attempt(scorer, case, output)
             if not isinstance(outcome, TransportError):
                 return outcome
-            if attempt < o.max_retries:
-                await o.sleep(backoff_s(attempt, o.retry_base_s, o.retry_max_s))
         return self._failed(scorer, output, f"transport error after retries: {outcome}")
 
     async def _attempt(
@@ -434,20 +446,16 @@ async def ascore_outputs(
     """Every scorer on every output, in that order. Deterministic scorers inline; model judges
     concurrently (design §18.24)."""
     cases = {c.id: c for c in dataset.cases}
-    scores: list[Score | None] = []
-    calls = []
-    for output in outputs:
+
+    async def one(scorer: Scorer, output: Output) -> Score:
         case = cases[output.case_id]
-        for scorer in scorers:
-            if isinstance(scorer, JudgeScorer):
-                assert judges is not None, "a judge scorer needs the judge runtime"
-                calls.append((len(scores), judges.score(scorer, case, output)))
-                scores.append(None)
-            else:
-                scores.append(safe_score(scorer, case, output))
-    for (i, _), score in zip(calls, await asyncio.gather(*(c for _, c in calls)), strict=True):
-        scores[i] = score
-    return [redactor.score(s) for s in scores if s is not None]
+        if isinstance(scorer, JudgeScorer):
+            assert judges is not None, "a judge scorer needs the judge runtime"
+            return await judges.score(scorer, case, output)
+        return safe_score(scorer, case, output)
+
+    scores = await asyncio.gather(*(one(s, o) for o in outputs for s in scorers))
+    return [redactor.score(s) for s in scores]
 
 
 # ---------------------------------------------------------------- self-checks (design §18.17)
@@ -570,20 +578,23 @@ def _git(cwd: Path) -> tuple[str | None, bool | None]:
 def _ci_guard(
     suite: Suite, targets: Sequence[tuple[str, Target]], ci: bool, scorers: Sequence[Scorer]
 ) -> frozenset[str]:
-    """Design §18.13. Returns the config names allowed to run in CI although not free. A model
-    judge is a call like a target's: one not declared free is refused the same way (§18.24)."""
-    paid = {name: billing for name, t in targets if (billing := t.billing()) != "free"}
-    roles = {s.role for s in scorers if isinstance(s, JudgeScorer)}
-    judges = {
+    """Design §18.13. Returns the config names allowed to run in CI although they make paid
+    calls. A model judge is a call like a target's (§18.24): one not declared free is refused
+    the same way, and when allowed, every config it judges made paid calls."""
+    if not ci:
+        return frozenset()
+    paid_targets = {name: billing for name, t in targets if (billing := t.billing()) != "free"}
+    roles = sorted({s.role for s in scorers if isinstance(s, JudgeScorer)})
+    paid_judges = {
         f"judge {role}": billing
-        for role in sorted(roles)
+        for role in roles
         if (billing := suite.spec.judges[role].billing) != "free"
     }
-    if not ci or not (paid or judges):
+    paid = paid_targets | paid_judges
+    if not paid:
         return frozenset()
     if Settings().allow_paid and suite.spec.allow_paid_in_ci:
-        return frozenset(paid)
-    paid |= judges
+        return frozenset(name for name, _ in targets) if paid_judges else frozenset(paid_targets)
     raise ConfigError(
         "CI mode refuses targets not declared free: "
         + ", ".join(f"{n} ({b})" for n, b in sorted(paid.items()))
@@ -598,10 +609,29 @@ def _repeats(suite: Suite, target: Target) -> int:
     return 1 if getattr(target, "deterministic", True) else 2
 
 
-def _status(gen: _Generation) -> RunStatus:
+def _status(gen: _Generation, judge_skipped: int) -> RunStatus:
+    """Failed without outputs; partial when the budget stopped generation or judging, or the
+    target gave up; else complete."""
     if not gen.outputs:
         return "failed"
-    return "partial" if gen.skipped or gen.abandoned else "complete"
+    return "partial" if gen.skipped or gen.abandoned or judge_skipped else "complete"
+
+
+def _summary(
+    dataset: Dataset,
+    repeats: int,
+    scorers: Sequence[Scorer],
+    outputs: Sequence[Output],
+    scores: Sequence[Score],
+) -> RunSummary:
+    return summarize(
+        dataset.cases,
+        repeats,
+        [s.name for s in scorers],
+        outputs,
+        scores,
+        pass_rate_scorers(scorers),
+    )
 
 
 def pass_rate_scorers(scorers: Sequence[Scorer]) -> frozenset[str]:
@@ -717,12 +747,11 @@ async def _run_config(
         finished_at=datetime.now(UTC),
         generation=generation,
         scores=scores,
-        warnings=[
-            w.model_copy(update={"message": redactor.text(w.message)})
-            for w in warnings
+        warnings=redactor.warnings(
+            warnings
             + _generation_warnings(ctx.suite, ctx.dataset, identity, generation)
             + _score_warnings(generation.outputs, scores)
-        ],
+        ),
         redact=redactor.to_config(),
         config=redactor.json(identity.config),
         artifacts=artifacts,
@@ -823,14 +852,7 @@ async def _teardown_all(
 
 def _record(ctx: _Context, r: _ConfigResult) -> RunRecord:
     gen, ident = r.generation, r.identity
-    summary = summarize(
-        ctx.dataset.cases,
-        r.repeats,
-        [s.name for s in ctx.scorers],
-        gen.outputs,
-        r.scores,
-        pass_rate_scorers(ctx.scorers),
-    )
+    summary = _summary(ctx.dataset, r.repeats, ctx.scorers, gen.outputs, r.scores)
     warnings = list(r.warnings)
     if ctx.options.crosscheck:
         warnings += _crosscheck(ctx, summary, r.scores, r.repeats)
@@ -857,7 +879,7 @@ def _record(ctx: _Context, r: _ConfigResult) -> RunRecord:
         lite_eval_version=__version__,
         git_sha=ctx.git_sha,
         git_dirty=ctx.git_dirty,
-        status="partial" if r.judge_skipped and gen.outputs else _status(gen),
+        status=_status(gen, r.judge_skipped),
         summary=summary,
         cost=cost_summary(gen.outputs, gen.calls, gen.warmup_usage, r.scores, r.judge_calls),
         warnings=warnings,
@@ -873,10 +895,12 @@ async def execute(
     dataset: Dataset,
     targets: Sequence[tuple[str, Target]],
     options: RunOptions = RunOptions(),
+    scorers: Sequence[Scorer] | None = None,
 ) -> list[RunResult]:
+    """`scorers`: the suite's, when the caller has built them already (`run_suite --gate`)."""
     if options.crosscheck and importlib.util.find_spec("ranx") is None:
         raise ConfigError("--crosscheck needs ranx: install lite-eval with the [ranking] extra")
-    scorers = [build_scorer(s, suite.spec.judges) for s in suite.scorer_specs]
+    scorers = list(scorers) if scorers is not None else build_scorers(suite)
     check_calibrations(suite, scorers)
     paid_allowed = _ci_guard(suite, targets, options.ci, scorers)
     git_sha, git_dirty = _git(suite.path.parent)
@@ -949,6 +973,10 @@ def prepare_targets(
     return targets
 
 
+def build_scorers(suite: Suite) -> list[Scorer]:
+    return [build_scorer(s, suite.spec.judges) for s in suite.scorer_specs]
+
+
 def precheck_gate(suite: Suite, dataset: Dataset, scorers: Sequence[Scorer]) -> None:
     """Gate configuration errors, found before any target is called (design §18.3, §18.4)."""
     if suite.spec.gate is None:
@@ -983,15 +1011,14 @@ def run_suite(
     """
     suite = load_suite(Path(path), root or Settings().root)
     dataset = load_dataset(suite.dataset_path)
+    scorers = build_scorers(suite)
     if gate:
-        precheck_gate(
-            suite, dataset, [build_scorer(s, suite.spec.judges) for s in suite.scorer_specs]
-        )
+        precheck_gate(suite, dataset, scorers)
     targets = prepare_targets(suite, config, announce=_announce)
     options = RunOptions(
         no_cache=no_cache, ci=ci_from_env() if ci is None else ci, crosscheck=crosscheck
     )
-    return asyncio.run(execute(suite, dataset, targets, options))
+    return asyncio.run(execute(suite, dataset, targets, options, scorers))
 
 
 def rescore_run(
@@ -1031,19 +1058,13 @@ def rescore_run(
     kept = [w for w in rec.warnings if w.code not in SCORE_DERIVED]
     record = rec.model_copy(
         update={
-            "run_id": new_run_id(now, str(rec.target.config.get("name", "rescore"))),
+            "run_id": new_run_id(now, rec.config_name or "rescore"),
             "scorers": _scorer_refs(scorers),
             "started_at": now,
             "finished_at": datetime.now(UTC),
-            "summary": summarize(
-                dataset.cases,
-                rec.repeats,
-                [s.name for s in scorers],
-                stored.outputs,
-                scores,
-                pass_rate_scorers(scorers),
-            ),
+            "summary": _summary(dataset, rec.repeats, scorers, stored.outputs, scores),
             "cost": cost_summary(stored.outputs, 0, (), scores, judge_calls),
+            # generation is as recorded; a judge the budget stopped makes it partial
             "status": "partial" if judge_skipped else rec.status,
             "cache": CacheStats(),
             "warnings": kept + _score_warnings(stored.outputs, scores),

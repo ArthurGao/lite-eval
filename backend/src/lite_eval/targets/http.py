@@ -18,7 +18,7 @@ from pydantic import Field, JsonValue, ValidationError, field_validator
 
 from lite_eval.contracts import Case, Output, Trace
 from lite_eval.errors import ConfigError
-from lite_eval.redact import KnownValues
+from lite_eval.redact import KnownValues, env_secrets
 from lite_eval.targets.base import MB, SpecBase, SpecIdentity, TargetError, TransportError
 from lite_eval.targets.jsonpath import JsonPath, compile_path
 
@@ -71,7 +71,7 @@ class HttpTarget(SpecIdentity):
         self._headers = {
             k: resolve_env(v, f"http header {k!r}", used) for k, v in spec.headers.items()
         }
-        self._known = KnownValues({f"env:{name}": value for name, value in used.items()})
+        self._known = KnownValues(env_secrets(used))
         if spec.body is not None and not any(k.lower() == "content-type" for k in spec.headers):
             self._headers["Content-Type"] = "application/json"
         env = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False)

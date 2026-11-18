@@ -250,3 +250,60 @@ def test_a_case_knows_its_neighbours_dataset_and_outcome(
     assert (last.prev_case_id, last.next_case_id) == ("q2", None)
     assert (middle.dataset, middle.miss, middle.error) == ("demo", True, None)
     assert first.miss is False
+
+
+def test_stepping_through_cases_parses_each_run_once_until_it_is_replaced(
+    root: Path, runs: tuple[RunResult, RunResult], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Viewer asks for one case at a time: each request used to parse the run and every
+    other run of the dataset again. A finished run never changes, so it is parsed once; a run
+    directory rewritten under the same name (a newer run.json) is read again."""
+    import os
+
+    from lite_eval.store import load_run as real
+
+    parsed: list[str] = []
+
+    def counting(directory: Path, **kw: Any) -> Any:
+        parsed.append(directory.name)
+        return real(directory, **kw)
+
+    monkeypatch.setattr("lite_eval.views.load_run", counting)
+    a, b = runs
+    for case_id in ("q0", "q1", "q2", "q3"):
+        case_detail(root, *ids(a), case_id, FileCatalog(root))
+    assert sorted(parsed) == sorted([a.directory.name, b.directory.name])
+
+    run_json = a.directory / "run.json"
+    later = run_json.stat().st_mtime_ns + 1_000_000_000
+    os.utime(run_json, ns=(later, later))
+    case_detail(root, *ids(a), "q0", FileCatalog(root))
+    assert parsed.count(a.directory.name) == 2
+
+
+def test_the_datasets_page_hashes_a_dataset_once_until_a_file_changes(
+    root: Path, runs: tuple[RunResult, RunResult], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The full load hashes the corpus (gigabytes for LongMemEval M), and the Viewer asks on
+    every page and window focus: an unchanged dataset is loaded once, a changed one again."""
+    import os
+
+    from lite_eval.datasets.local import load_dataset as real
+
+    loads: list[str] = []
+
+    def counting(directory: Path) -> Any:
+        loads.append(directory.name)
+        return real(directory)
+
+    monkeypatch.setattr("lite_eval.views.load_dataset", counting)
+    datasets(root)
+    dataset_cases(root, "demo")
+    assert len(loads) == 1
+
+    (directory,) = {p.parent for p in (root / "datasets").glob("*/dataset.yaml")}
+    cases = directory / "cases.jsonl"
+    later = cases.stat().st_mtime_ns + 1_000_000_000
+    os.utime(cases, ns=(later, later))
+    assert dataset_cases(root, "demo").total == len(CASES)
+    assert len(loads) == 2

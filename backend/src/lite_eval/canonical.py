@@ -3,6 +3,7 @@
 import hashlib
 import json
 import unicodedata
+from pathlib import Path
 from typing import Any
 
 
@@ -27,6 +28,12 @@ def sha256_hex(data: bytes | str) -> str:
     if isinstance(data, str):
         data = data.encode("utf-8")
     return hashlib.sha256(data).hexdigest()
+
+
+def file_sha256(path: Path) -> str:
+    """A file's sha256, streamed: a corpus file or a benchmark download may be large."""
+    with path.open("rb") as f:
+        return hashlib.file_digest(f, "sha256").hexdigest()
 
 
 def content_hash(value: Any) -> str:

@@ -4,7 +4,7 @@ import { GitCompareArrows, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { RunRow } from '@/client/types.gen'
 import { RunMarks } from '@/components/marks'
-import { Button, Empty, ErrorPanel, KeyHints, Pager, Scroll, Section, Select, Skeleton } from '@/components/ui'
+import { Button, Empty, KeyHints, Loaded, Pager, Scroll, Section, Select } from '@/components/ui'
 import { useData } from '@/data/context'
 import { runsQuery } from '@/data/queries'
 import { metric, ms, usd, when } from '@/lib/format'
@@ -112,127 +112,127 @@ function RunsPage() {
         </>
       }
     >
-      {runs.isPending ? (
-        <Skeleton rows={8} />
-      ) : runs.isError ? (
-        <ErrorPanel error={runs.error} />
-      ) : items.length === 0 ? (
-        <Empty title={search.suite || search.config || search.status ? 'No run matches these filters' : 'No runs yet'}>
-          {search.suite || search.config || search.status ? (
-            'Remove a filter above to see more.'
+      <Loaded query={runs} rows={8}>
+        {({ total }) =>
+          items.length === 0 ? (
+            <Empty title={search.suite || search.config || search.status ? 'No run matches these filters' : 'No runs yet'}>
+              {search.suite || search.config || search.status ? (
+                'Remove a filter above to see more.'
+              ) : (
+                <>
+                  Run a suite with <code className="font-mono">lite-eval run evals/suites/&lt;suite&gt;.yaml</code>; each
+                  config writes one run under <code className="font-mono">runs/</code>, and it appears here within a few
+                  seconds.
+                </>
+              )}
+            </Empty>
           ) : (
             <>
-              Run a suite with <code className="font-mono">lite-eval run evals/suites/&lt;suite&gt;.yaml</code>; each
-              config writes one run under <code className="font-mono">runs/</code>, and it appears here within a few
-              seconds.
-            </>
-          )}
-        </Empty>
-      ) : (
-        <>
-          <Scroll>
-            <table className="w-full border-collapse text-left">
-              <thead className="text-[12px] text-ink-2">
-                <tr className="border-b border-rule">
-                  <th className="sticky left-0 z-10 bg-surface px-3 py-1.5 font-medium">
-                    <span className="sr-only">Pick for comparison, </span>Config
-                  </th>
-                  <th className="px-2 py-1.5 font-medium">Suite</th>
-                  <th className="px-2 py-1.5 font-medium">Dataset</th>
-                  {shared ? (
-                    names.map((n) => (
-                      <th key={n} className="px-2 py-1.5 text-right font-medium">
-                        {n}
+              <Scroll>
+                <table className="w-full border-collapse text-left">
+                  <thead className="text-[12px] text-ink-2">
+                    <tr className="border-b border-rule">
+                      <th className="sticky left-0 z-10 bg-surface px-3 py-1.5 font-medium">
+                        <span className="sr-only">Pick for comparison, </span>Config
                       </th>
-                    ))
-                  ) : (
-                    <th className="px-2 py-1.5 font-medium">Metrics</th>
-                  )}
-                  <th className="px-2 py-1.5 text-right font-medium" title="Cases, and outputs that errored">
-                    Cases
-                  </th>
-                  <th className="px-2 py-1.5 text-right font-medium">p50</th>
-                  <th className="px-2 py-1.5 text-right font-medium">Cost</th>
-                  <th className="px-3 py-1.5 font-medium">Started</th>
-                </tr>
-              </thead>
-              <tbody ref={list}>
-                {items.map((r, i) => {
-                  const isPicked = picked.some((x) => x.run_id === r.run_id)
-                  return (
-                    <tr key={`${r.suite}/${r.run_id}`} {...rowProps(i)}>
-                      <td className="sticky left-0 z-10 bg-inherit px-3 py-1.5">
-                        <div className="flex items-center gap-2 whitespace-nowrap">
-                          <input
-                            type="checkbox"
-                            checked={isPicked}
-                            onChange={() => toggle(r)}
-                            aria-label={`Pick ${r.config} ${r.run_id} for comparison`}
-                            className="size-3.5 accent-[var(--focus)]"
-                          />
-                          <Link
-                            to="/runs/$suite/$runId"
-                            params={{ suite: r.suite, runId: r.run_id }}
-                            className="font-medium text-ink hover:underline"
-                          >
-                            {r.config}
-                          </Link>
-                          <RunMarks row={r} />
-                        </div>
-                      </td>
-                      <td className="px-2 py-1.5">
-                        {live ? (
-                          <button type="button" className="hover:underline" onClick={() => filter({ suite: r.suite })}>
-                            {r.suite}
-                          </button>
-                        ) : (
-                          r.suite
-                        )}
-                      </td>
-                      <td className="px-2 py-1.5 whitespace-nowrap text-ink-2">
-                        {r.dataset}
-                        <span className="font-mono text-[12px]">@{r.dataset_version}</span>
-                      </td>
+                      <th className="px-2 py-1.5 font-medium">Suite</th>
+                      <th className="px-2 py-1.5 font-medium">Dataset</th>
                       {shared ? (
                         names.map((n) => (
-                          <td key={n} className="px-2 py-1.5 text-right">
-                            {metric(r.metrics[n])}
-                          </td>
+                          <th key={n} className="px-2 py-1.5 text-right font-medium">
+                            {n}
+                          </th>
                         ))
                       ) : (
-                        <td className="px-2 py-1.5 text-ink-2">
-                          {Object.entries(r.metrics)
-                            .slice(0, 4)
-                            .map(([n, v]) => (
-                              <span key={n} className="mr-3 whitespace-nowrap">
-                                {n} <span className="text-ink">{metric(v)}</span>
-                              </span>
-                            ))}
-                        </td>
+                        <th className="px-2 py-1.5 font-medium">Metrics</th>
                       )}
-                      <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                        {r.n_cases}
-                        {r.target_errors > 0 && (
-                          <span className="ml-1 text-worse-text" title="Outputs that errored">
-                            · {r.target_errors} err
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-2 py-1.5 text-right text-ink-2">{ms(r.latency_p50_ms)}</td>
-                      <td className="px-2 py-1.5 text-right text-ink-2">{usd(r.cost_usd)}</td>
-                      <td className="px-3 py-1.5 font-mono text-[12px] whitespace-nowrap text-ink-2" title={r.started_at}>
-                        {when(r.started_at)}
-                      </td>
+                      <th className="px-2 py-1.5 text-right font-medium" title="Cases, and outputs that errored">
+                        Cases
+                      </th>
+                      <th className="px-2 py-1.5 text-right font-medium">p50</th>
+                      <th className="px-2 py-1.5 text-right font-medium">Cost</th>
+                      <th className="px-3 py-1.5 font-medium">Started</th>
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </Scroll>
-          <Pager offset={offset} limit={LIMIT} total={runs.data.total} onChange={(o) => void navigate({ search: (s) => ({ ...s, offset: o || undefined }) })} />
-          <KeyHints hints={[['J K', 'move'], ['Enter', 'open'], ['X', 'pick two runs to compare them']]} />
-        </>
-      )}
+                  </thead>
+                  <tbody ref={list}>
+                    {items.map((r, i) => {
+                      const isPicked = picked.some((x) => x.run_id === r.run_id)
+                      return (
+                        <tr key={`${r.suite}/${r.run_id}`} {...rowProps(i)}>
+                          <td className="sticky left-0 z-10 bg-inherit px-3 py-1.5">
+                            <div className="flex items-center gap-2 whitespace-nowrap">
+                              <input
+                                type="checkbox"
+                                checked={isPicked}
+                                onChange={() => toggle(r)}
+                                aria-label={`Pick ${r.config} ${r.run_id} for comparison`}
+                                className="size-3.5 accent-[var(--focus)]"
+                              />
+                              <Link
+                                to="/runs/$suite/$runId"
+                                params={{ suite: r.suite, runId: r.run_id }}
+                                className="font-medium text-ink hover:underline"
+                              >
+                                {r.config}
+                              </Link>
+                              <RunMarks row={r} />
+                            </div>
+                          </td>
+                          <td className="px-2 py-1.5">
+                            {live ? (
+                              <button type="button" className="hover:underline" onClick={() => filter({ suite: r.suite })}>
+                                {r.suite}
+                              </button>
+                            ) : (
+                              r.suite
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5 whitespace-nowrap text-ink-2">
+                            {r.dataset}
+                            <span className="font-mono text-[12px]">@{r.dataset_version}</span>
+                          </td>
+                          {shared ? (
+                            names.map((n) => (
+                              <td key={n} className="px-2 py-1.5 text-right">
+                                {metric(r.metrics[n])}
+                              </td>
+                            ))
+                          ) : (
+                            <td className="px-2 py-1.5 text-ink-2">
+                              {Object.entries(r.metrics)
+                                .slice(0, 4)
+                                .map(([n, v]) => (
+                                  <span key={n} className="mr-3 whitespace-nowrap">
+                                    {n} <span className="text-ink">{metric(v)}</span>
+                                  </span>
+                                ))}
+                            </td>
+                          )}
+                          <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                            {r.n_cases}
+                            {r.target_errors > 0 && (
+                              <span className="ml-1 text-worse-text" title="Outputs that errored">
+                                · {r.target_errors} err
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5 text-right text-ink-2">{ms(r.latency_p50_ms)}</td>
+                          <td className="px-2 py-1.5 text-right text-ink-2">{usd(r.cost_usd)}</td>
+                          <td className="px-3 py-1.5 font-mono text-[12px] whitespace-nowrap text-ink-2" title={r.started_at}>
+                            {when(r.started_at)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </Scroll>
+              <Pager offset={offset} limit={LIMIT} total={total} onChange={(o) => void navigate({ search: (s) => ({ ...s, offset: o || undefined }) })} />
+              <KeyHints hints={[['J K', 'move'], ['Enter', 'open'], ['X', 'pick two runs to compare them']]} />
+            </>
+          )
+        }
+      </Loaded>
     </Section>
   )
 }

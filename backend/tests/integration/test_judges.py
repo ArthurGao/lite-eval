@@ -316,3 +316,22 @@ def test_rescore_in_ci_refuses_a_judge_not_declared_free(
     monkeypatch.setenv("CI", "true")
     with pytest.raises(ConfigError, match=r"CI mode refuses .*judge grounded"):
         rescore_run(first.directory)  # would otherwise reach the (unreachable) judge endpoint
+
+
+def test_a_paid_judge_allowed_in_ci_is_recorded_as_paid_allowed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Design §18.13: the run records that the allowance was used. A free target judged by a
+    per-token judge made paid calls, so its record says so, like a paid target's."""
+    monkeypatch.setenv("LITE_EVAL_ALLOW_PAID", "1")
+    paid = {**JUDGE, "provider": "openai", "billing": "per_token"}
+    (result,) = execute_suite(
+        tmp_path,
+        [("a", FakeTarget())],
+        RunOptions(judge_factory=Judges(), ci=True),
+        cases=CASES,
+        scorers=[GROUNDED],
+        judges={"grounded": paid},
+        allow_paid_in_ci=True,
+    )
+    assert (result.record.ci.ci_mode, result.record.ci.paid_allowed) == (True, True)

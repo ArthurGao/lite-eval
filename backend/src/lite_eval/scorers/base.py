@@ -8,7 +8,7 @@ spec as canonical JSON, or the bare name; `rescore` rebuilds a scorer from it.
 from typing import Any, Protocol
 
 from lite_eval.canonical import canonical_json
-from lite_eval.contracts import Case, Output, Score, ScoreError, Verdict
+from lite_eval.contracts import Case, JudgeRecord, Output, Score, ScoreError, Verdict
 
 Spec = str | dict[str, Any]
 
@@ -35,17 +35,34 @@ def spec_name(spec: Spec) -> str:
     return spec if isinstance(spec, str) else canonical_json(spec)
 
 
-def failed(scorer: Scorer, output: Output, reason: str, error: ScoreError | None = None) -> Score:
+def make_score(
+    scorer: Scorer,
+    output: Output,
+    *,
+    value: float,
+    passed: bool | None,
+    reason: str,
+    evidence: Any = None,  # JSON; validated by Score (a list[str] is not a list[JsonValue])
+    error: ScoreError | None = None,
+    judge: JudgeRecord | None = None,
+) -> Score:
+    """A score of this scorer on this output: the identity fields come from them."""
     return Score(
         case_id=output.case_id,
         repeat=output.repeat,
         scorer=scorer.name,
         scorer_version=scorer.version,
-        value=0.0,
-        passed=False,
+        value=value,
+        passed=passed,
         reason=reason,
+        evidence=evidence,
         error=error,
+        judge=judge,
     )
+
+
+def failed(scorer: Scorer, output: Output, reason: str, error: ScoreError | None = None) -> Score:
+    return make_score(scorer, output, value=0.0, passed=False, reason=reason, error=error)
 
 
 def safe_score(scorer: Scorer, case: Case, output: Output) -> Score:

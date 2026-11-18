@@ -27,8 +27,13 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any, Protocol
 
-from lite_eval.contracts import Output, RedactConfig, Score
+from lite_eval.contracts import Output, RedactConfig, RunWarning, Score
 from lite_eval.errors import ConfigError
+
+
+def env_secrets(values: Mapping[str, str]) -> dict[str, str]:
+    """Environment values as secrets masked by value, named `env:<NAME>` (design §18.12)."""
+    return {f"env:{name}": value for name, value in values.items()}
 
 
 def _mark(rule: str) -> str:
@@ -364,6 +369,10 @@ class Redactor:
                 "error": error,
             }
         )
+
+    def warnings(self, warnings: Iterable[RunWarning]) -> list[RunWarning]:
+        """A run's warnings: their messages may quote outputs, errors or setup failures."""
+        return [w.model_copy(update={"message": self.text(w.message)}) for w in warnings]
 
     def score(self, score: Score) -> Score:
         """Reason, evidence, error message and the judge's raw reply."""

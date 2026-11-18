@@ -3,7 +3,7 @@ import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import type { CaseChange, Comparison, MetricDelta, RunRow } from '@/client/types.gen'
 import { CaseStrip, IntervalStrip, RunLink } from '@/components/marks'
-import { Button, Empty, ErrorPanel, KeyHints, Scroll, Section, Select, Skeleton, Tag, VerdictMark, WarningsList } from '@/components/ui'
+import { Button, Empty, KeyHints, Loaded, Scroll, Section, Select, Tag, VerdictMark, WarningsList } from '@/components/ui'
 import { useData } from '@/data/context'
 import { allRunsQuery, compareQuery } from '@/data/queries'
 import { delta as fmtDelta, metric, pValue, weight, when } from '@/lib/format'
@@ -37,56 +37,62 @@ function Picker() {
   const runs = useQuery(allRunsQuery(source))
   const [a, setA] = useState('')
   const [b, setB] = useState('')
-  if (runs.isPending) return <Skeleton />
-  if (runs.isError) return <ErrorPanel error={runs.error} />
-  const items = runs.data.items
-  const ref = (r: RunRow) => `${r.suite}/${r.run_id}`
-  const first = items.find((r) => ref(r) === a)
-  const options = (filter?: RunRow) => [
-    { value: '', label: 'choose a run' },
-    ...items
-      .filter((r) => !filter || (r.dataset === filter.dataset && ref(r) !== ref(filter)))
-      .map((r) => ({
-        value: ref(r),
-        label: `${r.suite} / ${r.config} · ${when(r.started_at)}${r.baseline ? ' · baseline' : ''}`,
-      })),
-  ]
+
   return (
-    <Section title="Compare two runs">
-      {items.length < 2 ? (
-        <Empty title="Two runs of one dataset are needed">Run a suite with two configs, or run it again after a change.</Empty>
-      ) : (
-        <form
-          className="flex flex-wrap items-end gap-3 px-3 py-3"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (a && b) void navigate({ search: { baseline: a, candidate: b } })
-          }}
-        >
-          <Select
-            label="Baseline"
-            value={a}
-            options={options()}
-            onChange={(v) => {
-              setA(v)
-              setB('')
-            }}
-            className="min-w-[22rem]"
-          />
-          <Select
-            label="Candidate (same dataset)"
-            value={b}
-            options={first ? options(first) : options().slice(0, 1)}
-            onChange={setB}
-            disabled={!first}
-            className="min-w-[22rem]"
-          />
-          <Button type="submit" variant="primary" disabled={!a || !b}>
-            Compare
-          </Button>
-        </form>
-      )}
-    </Section>
+    <Loaded query={runs}>
+      {(data) => {
+        const items = data.items
+        const ref = (r: RunRow) => `${r.suite}/${r.run_id}`
+        const first = items.find((r) => ref(r) === a)
+        const options = (filter?: RunRow) => [
+          { value: '', label: 'choose a run' },
+          ...items
+            .filter((r) => !filter || (r.dataset === filter.dataset && ref(r) !== ref(filter)))
+            .map((r) => ({
+              value: ref(r),
+              label: `${r.suite} / ${r.config} · ${when(r.started_at)}${r.baseline ? ' · baseline' : ''}`,
+            })),
+        ]
+
+        return (
+          <Section title="Compare two runs">
+            {items.length < 2 ? (
+              <Empty title="Two runs of one dataset are needed">Run a suite with two configs, or run it again after a change.</Empty>
+            ) : (
+              <form
+                className="flex flex-wrap items-end gap-3 px-3 py-3"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (a && b) void navigate({ search: { baseline: a, candidate: b } })
+                }}
+              >
+                <Select
+                  label="Baseline"
+                  value={a}
+                  options={options()}
+                  onChange={(v) => {
+                    setA(v)
+                    setB('')
+                  }}
+                  className="min-w-[22rem]"
+                />
+                <Select
+                  label="Candidate (same dataset)"
+                  value={b}
+                  options={first ? options(first) : options().slice(0, 1)}
+                  onChange={setB}
+                  disabled={!first}
+                  className="min-w-[22rem]"
+                />
+                <Button type="submit" variant="primary" disabled={!a || !b}>
+                  Compare
+                </Button>
+              </form>
+            )}
+          </Section>
+        )
+      }}
+    </Loaded>
   )
 }
 
@@ -96,38 +102,38 @@ function Result({ baseline, candidate }: { baseline: string; candidate: string }
   const a = split(baseline)
   const b = split(candidate)
 
-  if (comparison.isPending) return <Skeleton rows={10} />
-  if (comparison.isError) return <ErrorPanel error={comparison.error} />
-  const c = comparison.data
-
   return (
-    <div className="space-y-4">
-      <header className="rounded border border-rule bg-surface px-3 py-2.5">
-        <h1 className="flex flex-wrap items-baseline gap-x-2 text-[16px] font-semibold">
-          <RunLink suite={a.suite} runId={a.runId} config={c.baseline_config || a.runId} />
-          <span className="font-normal text-ink-2">→</span>
-          <RunLink suite={b.suite} runId={b.runId} config={c.candidate_config || b.runId} />
-        </h1>
-        <p className="mt-1 text-ink-2">
-          Paired on {c.dataset}: {c.metrics[0]?.n ?? 0} cases compared · 1 case = {weight(c.case_weight)}
-          {c.overlap === 'partial_overlap' && (
-            <span className="ml-2">
-              <Tag tone="warn" title="Only cases whose content is the same in both runs are compared">
-                partial overlap
-              </Tag>{' '}
-              {c.changed_cases?.length ?? 0} changed · {c.added_cases?.length ?? 0} added · {c.removed_cases?.length ?? 0} removed,
-              left out
-            </span>
-          )}
-        </p>
-      </header>
+    <Loaded query={comparison} rows={10}>
+      {(c) => (
+      <div className="space-y-4">
+        <header className="rounded border border-rule bg-surface px-3 py-2.5">
+          <h1 className="flex flex-wrap items-baseline gap-x-2 text-[16px] font-semibold">
+            <RunLink suite={a.suite} runId={a.runId} config={c.baseline_config || a.runId} />
+            <span className="font-normal text-ink-2">→</span>
+            <RunLink suite={b.suite} runId={b.runId} config={c.candidate_config || b.runId} />
+          </h1>
+          <p className="mt-1 text-ink-2">
+            Paired on {c.dataset}: {c.metrics[0]?.n ?? 0} cases compared · 1 case = {weight(c.case_weight)}
+            {c.overlap === 'partial_overlap' && (
+              <span className="ml-2">
+                <Tag tone="warn" title="Only cases whose content is the same in both runs are compared">
+                  partial overlap
+                </Tag>{' '}
+                {c.changed_cases?.length ?? 0} changed · {c.added_cases?.length ?? 0} added · {c.removed_cases?.length ?? 0} removed,
+                left out
+              </span>
+            )}
+          </p>
+        </header>
 
-      <MetricsTable metrics={c.metrics} />
+        <MetricsTable metrics={c.metrics} />
 
-      <WarningsList warnings={c.warnings ?? []} />
+        <WarningsList warnings={c.warnings ?? []} />
 
-      <Changes comparison={c} suite={b.suite} runId={b.runId} />
-    </div>
+        <Changes comparison={c} suite={b.suite} runId={b.runId} />
+      </div>
+      )}
+    </Loaded>
   )
 }
 

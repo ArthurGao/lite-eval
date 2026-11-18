@@ -4,6 +4,7 @@ import { X } from 'lucide-react'
 import { useState } from 'react'
 import type { Annotation } from '@/client/types.gen'
 import { useData } from '@/data/context'
+import { keys } from '@/data/queries'
 import { ApiError } from '@/data/source'
 import { cn } from '@/lib/cn'
 import { Button, Kbd } from './ui'
@@ -61,7 +62,7 @@ export function AnnotateDialog({
     onSuccess: (a) => {
       // An annotation changes cases and dataset cases only; runs, comparisons and trends stay.
       // Active queries refetch in the background; the dialog does not wait for them.
-      for (const family of ['case', 'cases', 'dataset-cases']) void queries.invalidateQueries({ queryKey: [family] })
+      for (const family of [keys.case, keys.cases, keys.datasetCases]) void queries.invalidateQueries({ queryKey: [family] })
       onSaved?.(a)
       onOpenChange(false)
       setNote('')

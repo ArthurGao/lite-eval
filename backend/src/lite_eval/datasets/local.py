@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from lite_eval.canonical import canonical_json, sha256_hex
+from lite_eval.canonical import canonical_json, file_sha256, sha256_hex
 from lite_eval.contracts import Case, DatasetRef, RunWarning
 from lite_eval.errors import ConfigError
 from lite_eval.files import read_jsonl
@@ -98,9 +98,7 @@ def dataset_hash(meta: DatasetMeta, case_hashes: dict[str, str], corpus: Path) -
     for case_id in sorted(case_hashes):
         h.update(case_hashes[case_id].encode())
     for rel, path in _corpus_files(corpus):
-        with path.open("rb") as f:  # streamed: a corpus file may be large
-            digest = hashlib.file_digest(f, "sha256").hexdigest()
-        h.update(f"{rel}\0{digest}".encode())
+        h.update(f"{rel}\0{file_sha256(path)}".encode())
     return h.hexdigest()
 
 

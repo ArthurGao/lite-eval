@@ -3,6 +3,8 @@
 Exit codes (design §18.4): 0 pass, 1 gate failed (from E2), 2 config or input error, 3 run failed.
 """
 
+import functools
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 from typing import Annotated, NoReturn
@@ -57,10 +59,7 @@ def _finish(results: list[RunResult], gate: bool = False) -> None:
         typer.echo("run failed: no case was scored", err=True)
         raise typer.Exit(3)
     if gate:
-        try:
-            outcomes = gate_results(results)
-        except LiteEvalError as exc:
-            _fail(exc)
+        outcomes = gate_results(results)  # a gate error exits via the command's _errors
         for o in outcomes:
             typer.echo(render_gate(o))
         if not all(o.passed for o in outcomes):
@@ -72,7 +71,21 @@ def _fail(exc: LiteEvalError) -> NoReturn:
     raise typer.Exit(exc.exit_code)
 
 
+def _errors[**P, R](command: Callable[P, R]) -> Callable[P, R]:
+    """A command's LiteEvalError becomes its exit code (design §18.4), never a traceback."""
+
+    @functools.wraps(command)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return command(*args, **kwargs)
+        except LiteEvalError as exc:
+            _fail(exc)
+
+    return wrapper
+
+
 @app.command()
+@_errors
 def run(
     suite: Annotated[Path, typer.Argument(help="Suite YAML file.")],
     config: Annotated[str | None, typer.Option(help="Run only this config.")] = None,
@@ -95,22 +108,20 @@ def run(
     ] = False,
 ) -> None:
     """Generate outputs, score them and write one run directory per config."""
-    try:
-        results = run_suite(
-            suite,
-            config=config,
-            no_cache=no_cache,
-            ci=ci,
-            root=root,
-            gate=gate,
-            crosscheck=crosscheck,
-        )
-    except LiteEvalError as exc:
-        _fail(exc)
+    results = run_suite(
+        suite,
+        config=config,
+        no_cache=no_cache,
+        ci=ci,
+        root=root,
+        gate=gate,
+        crosscheck=crosscheck,
+    )
     _finish(results, gate=gate)
 
 
 @app.command()
+@_errors
 def rescore(
     run_dir: Annotated[Path, typer.Argument(help="A run directory (runs/<suite>/<run_id>).")],
     scorer: Annotated[
@@ -118,36 +129,29 @@ def rescore(
     ] = None,
 ) -> None:
     """Score a run's stored outputs again without calling the target; writes a new run."""
-    try:
-        result = rescore_run(run_dir, scorer)
-    except LiteEvalError as exc:
-        _fail(exc)
+    result = rescore_run(run_dir, scorer)
     _finish([result])
 
 
 @app.command()
+@_errors
 def compare(
     baseline: Annotated[Path, typer.Argument(help="Baseline run directory.")],
     candidate: Annotated[Path, typer.Argument(help="Candidate run directory.")],
 ) -> None:
     """Pair two runs case by case: deltas, significance and the cases that changed."""
-    try:
-        comparison = compare_runs(baseline, candidate)
-    except LiteEvalError as exc:
-        _fail(exc)
+    comparison = compare_runs(baseline, candidate)
     typer.echo(render_comparison(comparison))
 
 
 @baseline_app.command("set")
+@_errors
 def baseline_set(
     run_dir: Annotated[Path, typer.Argument(help="A finished run directory.")],
 ) -> None:
     """Make this run its suite's baseline (written to <root>/baselines.yaml)."""
-    try:
-        stored = load_run(run_dir)
-        path = set_baseline(stored)
-    except LiteEvalError as exc:
-        _fail(exc)
+    stored = load_run(run_dir, outputs=False)  # the baseline needs only the record
+    path = set_baseline(stored)
     typer.echo(f"baseline of {stored.record.suite.name}: {stored.record.run_id} ({path})")
     typer.echo(
         f"commit {run_dir} and {path.name} (with {BASELINE_LOG}) with the code they gate "
@@ -156,6 +160,7 @@ def baseline_set(
 
 
 @dataset_app.command("import")
+@_errors
 def dataset_import(
     loader: Annotated[str, typer.Argument(help="longmemeval or locomo.")],
     src: Annotated[Path, typer.Argument(help="The official benchmark file (JSON).")],
@@ -172,13 +177,10 @@ def dataset_import(
     from lite_eval.datasets.loaders import import_dataset
     from lite_eval.datasets.local import load_dataset
 
-    try:
-        directory = import_dataset(
-            loader, src, out, name=name, limit=limit, include_abstention=include_abstention
-        )
-        dataset = load_dataset(directory)
-    except LiteEvalError as exc:
-        _fail(exc)
+    directory = import_dataset(
+        loader, src, out, name=name, limit=limit, include_abstention=include_abstention
+    )
+    dataset = load_dataset(directory)
     meta = dataset.meta
     typer.echo(
         f"{meta.name} {meta.version}: {len(dataset.cases)} cases -> {directory} "
@@ -202,6 +204,7 @@ _STATIC_HELP = "Built frontend to serve (default: the one packaged with lite-eva
 
 
 @app.command()
+@_errors
 def view(
     root: Annotated[
         Path | None, typer.Option(help="Evaluation root (default: ., else ./evals).")
@@ -218,23 +221,20 @@ def view(
 
     server_run = _server_module()
     static_dir = static or STATIC
-    try:
-        if check:
-            codes = server_run.check(root, static_dir)
-            typer.echo(f"view check: / {codes['/']}, /api/health {codes['/api/health']}")
-            if set(codes.values()) != {200}:
-                if codes["/"] == 503:
-                    typer.echo(NO_FRONTEND, err=True)
-                raise typer.Exit(3)
-            return
-        server_run.check_host(host)
-        resolved = server_run.resolve_root(root, Path.cwd())
-        if not (static_dir / "index.html").is_file():
-            typer.echo(f"warning: {NO_FRONTEND}", err=True)
-        typer.echo(f"lite-eval Viewer on http://{host}:{port}  (root {resolved}; Ctrl-C stops)")
-        server_run.serve(resolved, host, port, static_dir)
-    except LiteEvalError as exc:
-        _fail(exc)
+    if check:
+        codes = server_run.check(root, static_dir)
+        typer.echo(f"view check: / {codes['/']}, /api/health {codes['/api/health']}")
+        if set(codes.values()) != {200}:
+            if codes["/"] == 503:
+                typer.echo(NO_FRONTEND, err=True)
+            raise typer.Exit(3)
+        return
+    server_run.check_host(host)
+    resolved = server_run.resolve_root(root, Path.cwd())
+    if not (static_dir / "index.html").is_file():
+        typer.echo(f"warning: {NO_FRONTEND}", err=True)
+    typer.echo(f"lite-eval Viewer on http://{host}:{port}  (root {resolved}; Ctrl-C stops)")
+    server_run.serve(resolved, host, port, static_dir)
 
 
 _CATEGORIES: dict[str, AnnotationCategory] = {
@@ -253,6 +253,7 @@ def _short(value: object, limit: int = 400) -> str:
 
 
 @app.command()
+@_errors
 def triage(
     run_dir: Annotated[Path, typer.Argument(help="A run directory (runs/<suite>/<run_id>).")],
 ) -> None:
@@ -260,12 +261,9 @@ def triage(
     from lite_eval.annotations import annotate
     from lite_eval.views import untriaged
 
-    try:
-        record = load_run(run_dir, outputs=False).record
-        root = root_of(run_dir)
-        todo = untriaged(root, record.suite.name, record.run_id)
-    except LiteEvalError as exc:
-        _fail(exc)
+    record = load_run(run_dir, outputs=False).record
+    root = root_of(run_dir)
+    todo = untriaged(root, record.suite.name, record.run_id)
     if not todo:
         typer.echo("nothing to triage: every miss of this run has a current annotation")
         return
@@ -329,6 +327,7 @@ def _run_dirs(target: str) -> list[Path]:
 
 
 @app.command()
+@_errors
 def report(
     target: Annotated[
         str, typer.Argument(help="A run directory, or <baseline dir>..<candidate dir>.")
@@ -346,22 +345,17 @@ def report(
 
     if not html:
         _fail(ConfigError("only --html is supported"))
-    try:
-        page = render(static or STATIC, _run_dirs(target), redact or [])
-    except LiteEvalError as exc:
-        _fail(exc)
+    page = render(static or STATIC, _run_dirs(target), redact or [])
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(page, encoding="utf-8")
     typer.echo(f"wrote {out} ({len(page.encode()) // 1024} KB)")
 
 
 @export_app.command("kb")
+@_errors
 def export_kb_command(
     runs: Annotated[list[Path], typer.Argument(help="Run directories of one suite.")],
 ) -> None:
     """Rows for the KB's llm-evals results.jsonl, one per run and metric (stdout); the suite's
     `kb:` section names the eval card, task, dataset, grader and the metrics to export."""
-    try:
-        typer.echo(export_kb(runs), nl=False)
-    except LiteEvalError as exc:
-        _fail(exc)
+    typer.echo(export_kb(runs), nl=False)

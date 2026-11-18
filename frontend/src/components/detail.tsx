@@ -52,7 +52,7 @@ export function Value({ value }: { value: unknown }) {
             <div className="min-w-0">
               <p className="text-[12px] text-ink-2">
                 <span className="font-mono">{String(h.doc ?? h.id ?? '')}</span>
-                {typeof h.score === 'number' && <span className="ml-2">score {h.score.toFixed(3)}</span>}
+                {typeof h.score === 'number' && <span className="ml-2">score {metric(h.score)}</span>}
               </p>
               {h.text != null && <Folded text={String(h.text)} />}
             </div>

@@ -308,6 +308,11 @@ class RunRecord(_Record):
     gate: GateSpec | None = None  # as declared in the suite; `lite-eval run --gate` evaluates it
     case_hashes: dict[str, str] = Field(default_factory=dict)  # case id -> hash (§18.3)
 
+    @property
+    def config_name(self) -> str:
+        """The suite config this run is ("" when not recorded); not a stored field."""
+        return str(self.target.config.get("name", ""))
+
 
 class MetricDelta(_Record):
     """One metric of a comparison (design §8.2, §18.2, §18.3)."""

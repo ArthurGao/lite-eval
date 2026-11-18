@@ -3,9 +3,9 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { TrendChart, trendEvents } from '@/components/trend'
 import { RunLink, RunMarks } from '@/components/marks'
-import { Empty, ErrorPanel, Scroll, Section, Select, Skeleton } from '@/components/ui'
+import { Empty, ErrorPanel, Loaded, Scroll, Section, Select, Skeleton } from '@/components/ui'
 import { useData } from '@/data/context'
-import { allRunsQuery } from '@/data/queries'
+import { allRunsQuery, trendQuery } from '@/data/queries'
 import { metric, shortSha, when } from '@/lib/format'
 
 type Search = { suite?: string; metric?: string; config?: string }
@@ -49,11 +49,7 @@ function TrendsPage() {
   }, [items, suite])
   const chosen = search.metric && metrics.includes(search.metric) ? search.metric : metrics[0]
   const config = search.config && configs.includes(search.config) ? search.config : configs[0]
-  const trend = useQuery({
-    queryKey: ['trend', suite, chosen, config],
-    queryFn: () => source.trend(suite!, chosen!, config),
-    enabled: Boolean(suite && chosen),
-  })
+  const trend = useQuery(trendQuery(source, suite, chosen, config))
   const { ref, width } = useWidth()
   const set = (patch: Search) => void navigate({ search: (s) => ({ ...s, ...patch }) })
 
@@ -87,22 +83,22 @@ function TrendsPage() {
         }
       >
         <div ref={ref} className="px-2 py-3">
-          {trend.isPending ? (
-            <Skeleton rows={6} />
-          ) : trend.isError ? (
-            <ErrorPanel error={trend.error} />
-          ) : trend.data.points.length === 0 ? (
-            <Empty title={`No run of ${config} reports ${chosen}`} />
-          ) : (
-            <>
-              <TrendChart trend={trend.data} width={Math.max(width - 16, 320)} />
-              <p className="mt-2 px-2 text-[12px] text-ink-2">
-                One point per run of {config}, in run order. The ringed point is the suite&apos;s current baseline;
-                vertical rules mark where the baseline was set and where the dataset changed version.
-                {(trend.data.baseline_changes ?? []).length === 0 && ' No baseline switch has been logged for this suite.'}
-              </p>
-            </>
-          )}
+          <Loaded query={trend} rows={6}>
+            {(t) =>
+              t.points.length === 0 ? (
+                <Empty title={`No run of ${config} reports ${chosen}`} />
+              ) : (
+                <>
+                  <TrendChart trend={t} width={Math.max(width - 16, 320)} />
+                  <p className="mt-2 px-2 text-[12px] text-ink-2">
+                    One point per run of {config}, in run order. The ringed point is the suite&apos;s current baseline;
+                    vertical rules mark where the baseline was set and where the dataset changed version.
+                    {(t.baseline_changes ?? []).length === 0 && ' No baseline switch has been logged for this suite.'}
+                  </p>
+                </>
+              )
+            }
+          </Loaded>
         </div>
       </Section>
 

@@ -72,7 +72,7 @@ def kb_rows(records: Sequence[RunRecord], spec: KbSpec) -> list[dict[str, Any]]:
                 "vendor": vendor,
                 "model": model,
                 "effort": effort,
-                "variant": str(rec.target.config.get("name", "")),
+                "variant": rec.config_name,
                 "grader": spec.grader,
                 "metric": kb_metric,
                 "value": round(summary.value, 4),

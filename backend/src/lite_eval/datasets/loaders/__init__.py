@@ -8,7 +8,6 @@ sha256 and license are recorded in `dataset.yaml`; the license also travels into
 whole, LongMemEval M (2.7 GB) would take ~24 GB of memory (S, 277 MB, measured 2.4 GB).
 """
 
-import hashlib
 import json
 import shutil
 import tempfile
@@ -18,6 +17,7 @@ from typing import Any, TextIO
 
 import yaml
 
+from lite_eval.canonical import file_sha256
 from lite_eval.datasets.loaders import locomo, longmemeval
 from lite_eval.datasets.loaders._common import Item, Source
 from lite_eval.datasets.local import CORPUS, DatasetMeta, DatasetSource
@@ -173,8 +173,7 @@ def import_dataset(
         )
 
     try:
-        with src.open("rb") as raw:  # hashed in a pass of its own: the raw bytes are not kept
-            digest = hashlib.file_digest(raw, "sha256").hexdigest()
+        digest = file_sha256(src)  # a pass of its own: the raw bytes are not kept
         with src.open(encoding="utf-8") as f:
             items = _read(loader, iter_json_list(f), limit, include_abstention, notes)
             _write(out, items, meta_for)
