@@ -26,7 +26,7 @@ lite-eval is not on PyPI. Each release attaches a wheel (with the Viewer built i
 ```toml
 # pyproject.toml
 [tool.uv.sources]
-lite-eval = { url = "https://github.com/ArthurGao/lite-eval/releases/download/v0.4.0/lite_eval-0.4.0-py3-none-any.whl" }
+lite-eval = { url = "https://github.com/ArthurGao/lite-eval/releases/download/v0.4.1/lite_eval-0.4.1-py3-none-any.whl" }
 ```
 
 Python 3.12. Installing from a git commit also works, but without the Viewer (its build is not in git).
