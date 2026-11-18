@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 from pydantic import (
@@ -97,6 +98,19 @@ class KbSpec(BaseModel):
     vendor: str | None = None
     model: str | None = None
     effort: KbEffort | None = None
+    # The day a row is dated by: the run's start in this IANA timezone (a run on a New Zealand
+    # morning is the previous day in UTC). Named in the suite so an export is the same anywhere.
+    timezone: str = "UTC"
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_zone(cls, name: str) -> str:
+        try:
+            ZoneInfo(name)
+        except (ZoneInfoNotFoundError, ValueError):
+            hint = "an IANA name, e.g. Pacific/Auckland"
+            raise ValueError(f"unknown timezone {name!r} ({hint})") from None
+        return name
 
 
 class SuiteSpec(_Spec):

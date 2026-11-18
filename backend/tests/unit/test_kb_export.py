@@ -86,3 +86,22 @@ def test_the_rows_pass_the_kb_s_own_check(tmp_path: Path) -> None:
     assert done.returncode == 0, done.stdout
     assert ", 0 error(s)." in done.stdout
     assert json.loads(render_rows(rows).splitlines()[0])["eval"] == SPEC["eval"]
+
+
+def test_the_row_date_is_the_start_date_in_the_suite_s_timezone() -> None:
+    """A run started on a New Zealand morning is the previous day in UTC: the KB dates a
+    measurement by the owner's day, so the suite names its timezone (default UTC, which
+    keeps every existing export unchanged)."""
+    from datetime import UTC, datetime
+
+    record = read_record(V1_RUN)
+    late = record.model_copy(update={"started_at": datetime(2026, 11, 17, 23, 18, tzinfo=UTC)})
+    assert kb_rows([late], KbSpec.model_validate(SPEC))[0]["date"] == "2026-11-17"
+    nz = KbSpec.model_validate({**SPEC, "timezone": "Pacific/Auckland"})
+    assert kb_rows([late], nz)[0]["date"] == "2026-11-18"
+    assert kb_rows([record], nz)[0]["date"] == "2026-11-13"  # 09:00Z is 22:00 there
+
+
+def test_an_unknown_timezone_fails_when_the_suite_loads() -> None:
+    with pytest.raises(ValidationError, match="unknown timezone 'Mars/Olympus'"):
+        KbSpec.model_validate({**SPEC, "timezone": "Mars/Olympus"})

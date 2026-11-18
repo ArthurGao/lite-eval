@@ -12,6 +12,7 @@ import json
 import re
 from collections.abc import Sequence
 from typing import Any, get_args
+from zoneinfo import ZoneInfo
 
 from lite_eval.contracts import RunRecord
 from lite_eval.errors import ConfigError
@@ -64,7 +65,7 @@ def kb_rows(records: Sequence[RunRecord], spec: KbSpec) -> list[dict[str, Any]]:
                 raise ConfigError(f"run {rec.run_id} has no metric {metric!r} to export")
             row: dict[str, Any] = {
                 "eval": spec.eval,
-                "date": rec.started_at.date().isoformat(),
+                "date": rec.started_at.astimezone(ZoneInfo(spec.timezone)).date().isoformat(),
                 "project": spec.project,
                 "task": spec.task,
                 "dataset": spec.dataset,
