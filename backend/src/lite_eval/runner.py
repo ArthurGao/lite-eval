@@ -14,6 +14,7 @@ import platform
 import subprocess
 import sys
 import time
+from collections import Counter
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -499,9 +500,33 @@ def _generation_warnings(
         ]
     if gen.corrupt:
         w.append(_warn("cache_corrupt", f"{gen.corrupt} unreadable cache entries regenerated"))
+    w += _target_error_warnings(gen.outputs)
     if gen.skipped:
         w.append(_warn("budget_exhausted", f"budget reached: {gen.skipped} outputs not generated"))
     return w
+
+
+TARGET_ERROR_SHARE = 0.1  # from this share of errored outputs the metrics mostly measure failures
+
+
+def _target_error_warnings(outputs: Sequence[Output]) -> list[RunWarning]:
+    """Design §18.17 `target_errors`: errors stay in the denominator (rule 4), so a run whose
+    calls failed (a quota ran out, a service was down) scores low as if the target were bad;
+    the warning says how many failed and how, so the number is not read as a measurement."""
+    errored = [o for o in outputs if o.error is not None]
+    if not errored or len(errored) < TARGET_ERROR_SHARE * len(outputs):
+        return []
+    kinds = Counter(o.error.kind for o in errored if o.error is not None)
+    by_kind = ", ".join(f"{kind}: {n}" for kind, n in kinds.most_common())
+    first = errored[0].error
+    assert first is not None
+    return [
+        _warn(
+            "target_errors",
+            f"{len(errored)} of {len(outputs)} outputs are target errors ({by_kind}; e.g. "
+            f"{first.message[:200]}): the metrics measure these failures as much as the target",
+        )
+    ]
 
 
 def _score_warnings(outputs: Sequence[Output], scores: Sequence[Score]) -> list[RunWarning]:

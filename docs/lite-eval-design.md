@@ -1273,6 +1273,7 @@ runner 开始时会把要执行的命令或 URL 打印出来。
 - **`within_noise`**：定义见 §18.1。
 - **其他**：
   - `all_failed`：有输出，但没有一个分数通过或大于 0。
+  - `target_errors`：出错的输出（包括超时、调用异常、额度用完的 429）占全部输出的 10% 及以上时警告，写明出错条数、按错误种类的计数和一条示例；终端报告的表头也写出错条数。错误照样计入分母（规则 4），这条警告让人不把这样的分数当成被测系统的水平（2026-11-18：gpt-sub 的订阅额度在一次校准中途用完，104/223 次调用失败，运行仍是 complete、分数 0.529，出错数却要翻到报告末尾才看得到）。
   - `empty_group`：Suite 用 `expect_tags: {kind: [fact, multihop]}` 声明期望的分组，某个值没有用例时警告（分组来自标签，不声明就无从知道“该有却没有”）。
   - `synthetic_dataset`：`dataset.yaml` 写了 `synthetic: true`，或有用例的 `provenance.synthetic` 为真。
   - `unversioned_target`：`versions()` 为空，引擎或模型换了缓存也看不出来。

@@ -84,7 +84,10 @@ def test_a_retrieval_suite_uses_the_pack_defaults_and_matches_ranx(tmp_path: Pat
     assert m["mrr@10"] == pytest.approx((1 + 1 / 3) / 4)
     assert m["doc_hit@5"] == pytest.approx(3 / 4)
     assert result.record.summary.groups["kind"]["paraphrase"]["hit@1"] == 0.0
-    assert [w.code for w in result.record.warnings] == []  # no crosscheck_mismatch
+    # The check is about ranx: no crosscheck_mismatch. (Was `warnings == []`; e3's timeout is 1 of 4
+    # outputs, which since E7 also warns `target_errors`, correctly.)
+    codes = [w.code for w in result.record.warnings]
+    assert "crosscheck_mismatch" not in codes and codes == ["target_errors"]
 
 
 def test_relevance_mode_with_repeats_matches_ranx(tmp_path: Path) -> None:
@@ -103,10 +106,11 @@ def test_a_gap_to_ranx_is_a_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     result = run(tmp_path, EVIDENCE_CASES, EVIDENCE_STEPS)
 
     codes = [w.code for w in result.record.warnings]
-    assert codes == ["crosscheck_mismatch"] * 5  # all five pack scorers differ from 0.123
+    # Five pack scorers differ from the patched ranx; e3's timeout also warns target_errors (E7).
+    assert [c for c in codes if c != "target_errors"] == ["crosscheck_mismatch"] * 5
     assert (
         "hit@1: lite-eval 0.250000000000 vs ranx 0.123000000000"
-        in result.record.warnings[0].message
+        in next(w for w in result.record.warnings if w.code == "crosscheck_mismatch").message
     )
 
 

@@ -11,6 +11,7 @@ import pytest
 from lite_eval.contracts import Case, Output, Span, Trace, Usage
 from lite_eval.datasets.local import load_dataset
 from lite_eval.errors import ConfigError, RunError
+from lite_eval.report.terminal import render_run
 from lite_eval.runner import RunOptions, RunResult, backoff_s, execute
 from lite_eval.store import load_run
 from lite_eval.suite import load_suite
@@ -232,6 +233,28 @@ def test_backoff_exponent_is_capped() -> None:
 
 
 # ---------------------------------------------------------------- budget
+
+
+def test_a_run_mostly_of_target_errors_says_so_up_front(tmp_path: Path) -> None:
+    """Failures count (rule 4), so a run whose calls failed (a quota ran out) scores low as if
+    the target were bad. The record warns how many outputs are errors and what they were, and
+    the report's header shows the count, so the number is not read as a measurement."""
+    target = FakeTarget(steps={"q1": Step(raise_exception=True), "q2": Step(raise_exception=True)})
+    (result,) = run(tmp_path, [("a", target)])
+
+    (warning,) = [w for w in result.record.warnings if w.code == "target_errors"]
+    assert warning.message.startswith("2 of 3 outputs are target errors (exception: 2;")
+    assert "RuntimeError: boom on q1" in warning.message
+    assert "2 errors" in render_run(result.record, str(result.directory), result.scores)
+
+
+def test_a_run_with_few_target_errors_gets_no_such_warning(tmp_path: Path) -> None:
+    cases = [{"id": f"c{i:02d}", "input": {"q": i}, "expected": "x"} for i in range(11)]
+    target = FakeTarget(steps={"c00": Step(raise_exception=True)})
+    (result,) = run(tmp_path, [("a", target)], cases=cases)
+
+    assert result.record.summary.errored_outputs == 1  # 1 of 11: under a tenth
+    assert "target_errors" not in {w.code for w in result.record.warnings}
 
 
 def test_max_calls_stops_the_run_as_partial(tmp_path: Path) -> None:

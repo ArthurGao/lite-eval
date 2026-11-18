@@ -22,7 +22,9 @@ def render_run(
         f"  suite {record.suite.name} · config {record.target.config.get('name')} · "
         f"dataset {record.dataset.name}@{record.dataset.version} ({record.dataset.hash[:12]})",
         f"  {s.n_cases} cases x {s.repeats} repeats = {s.outputs_expected} outputs expected, "
-        f"{s.outputs_recorded} recorded · 1 case = {s.case_weight:.3f} of a 0-1 metric",
+        f"{s.outputs_recorded} recorded"
+        + (f", {s.errored_outputs} errors" if s.errored_outputs else "")
+        + f" · 1 case = {s.case_weight:.3f} of a 0-1 metric",
     ]
     if record.rescored_from:
         lines.append(f"  rescored from {record.rescored_from}")
