@@ -32,9 +32,9 @@ lite-rag 管文档知识，lite-mem 管关于人的记忆，lite-eval 衡量它�
 
 | 来源 | 内容 | 迁入后归属 |
 | --- | --- | --- |
-| `~/Code/AI/lite-rag/src/lite_rag/eval.py`（315 行）、`eval/golden*.jsonl`、`eval/corpus*/`、`eval/configs/*.yaml`、`eval/crosscheck_ranx.py` | 检索评测：按证据句判对错；hit@k、MRR@10、延迟；同一索引只建一次；计时前预热；用 ranx 交叉核对 | retrieval pack（§7） |
-| `~/Code/AI/lite-mem/eval/multihop.py`、`eval/multihop.json`、`eval/dataset.json`、`eval/results/*.json` | 两跳检索；抽取、冲突消解、敏感信息 | memory pack |
-| `~/Code/AI/llm-steward/backend/tests/eval/`（`test_recall.py`、`corpus.py`） | 联合检索 recall@8 的 pytest 门禁，阈值 0.92，基线 0.960 | 门禁（§8.4） |
+| `~/Code/AI/lite-ai/lite-rag/src/lite_rag/eval.py`（315 行）、`eval/golden*.jsonl`、`eval/corpus*/`、`eval/configs/*.yaml`、`eval/crosscheck_ranx.py` | 检索评测：按证据句判对错；hit@k、MRR@10、延迟；同一索引只建一次；计时前预热；用 ranx 交叉核对 | retrieval pack（§7） |
+| `~/Code/AI/lite-ai/lite-mem/eval/multihop.py`、`eval/multihop.json`、`eval/dataset.json`、`eval/results/*.json` | 两跳检索；抽取、冲突消解、敏感信息 | memory pack |
+| `~/Code/AI/lite-ai/llm-steward/backend/tests/eval/`（`test_recall.py`、`corpus.py`） | 联合检索 recall@8 的 pytest 门禁，阈值 0.92，基线 0.960 | 门禁（§8.4） |
 | KB `~/Docs/Knowledgebase/global/llm-evals/`（`methodology.md`、`evals/`、`results.jsonl`、`tasks/`） | 方法论、评测卡片、跨项目结果表 | 方法论写进默认行为（§3、§8、§9）；结果可以导出（§13） |
 | KB `projects/lite-rag/reference/eval-results.md`、`projects/lite-mem/reference/eval-results.md` | 每次评测的结果和解读 | 经验教训（§3） |
 
@@ -471,7 +471,7 @@ class Scorer(Protocol):
 ### 10.2 技术
 
 - **前端**：React + Vite + TypeScript、TanStack Router 和 Query、shadcn/ui + Tailwind、Vitest、Playwright，和 llm-steward 的
-  Admin 一致（参考 `~/Code/AI/llm-steward/frontend/`）。客户端从后端的 OpenAPI 生成（`@hey-api/openapi-ts`）。
+  Admin 一致（参考 `~/Code/AI/lite-ai/llm-steward/frontend/`）。客户端从后端的 OpenAPI 生成（`@hey-api/openapi-ts`）。
 - **打包**：构建出的静态文件复制进 Python 包（`lite_eval/server/static/`）。`pip install lite-eval` 后直接 `lite-eval view`，
   使用者的机器上不需要 Node。
 - **数据**：
