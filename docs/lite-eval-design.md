@@ -1,6 +1,6 @@
 # lite-eval 设计文档
 
-> 状态：设计稿（2026-11-13），实现尚未开始。按第 16 节的阶段实施；某个阶段改变了行为，就在同一次提交里更新本文。
+> 状态：E0–E5b、E7 已完成（2026-11-13 至 11-18），发布 v0.4.1（GitHub Release wheel）；下一步 E6（agent pack，等有 agent 应用时再做）。按第 16 节的阶段实施；某个阶段改变了行为，就在同一次提交里更新本文。
 >
 > **给新 session 的说明**：这份文档是实现 lite-eval 的唯一依据。它在 llm-steward 的会话里写成，汇总了
 > lite-rag、lite-mem、llm-steward 和 tenderted 几个项目做评测时的全部经验。先读 §0 和 §2、§3，
@@ -441,6 +441,17 @@ class Scorer(Protocol):
   - 本地开发走 llm-gateway（`http://127.0.0.1:8787/v1`）或 Ollama；
   - 代码里不写死厂商或模型名；
   - 不做 fallback 链：调用失败就算评分错误。
+- **不走 lite-model（明确的例外，2026-11-21 owner 确认）**：工作区约定“每次 LLM 调用都经由 lite-model role”，
+  judge 是唯一的例外，调用代码只在 `judges/client.py`（§18.24）。理由：
+  - judge 是测量仪器，要固定、和被测的栈隔离：被评测的项目都依赖 lite-model，judge 若也走它，lite-model 的
+    改动会同时改变被测系统和仪器（规则 9 的同一个理由）。
+  - lite-model 的 `ollama` 后端走 OpenAI 兼容的 `/v1`；judge 需要 Ollama 原生 `/api/chat` 的布尔 `think`
+    和回复里的 `thinking` 文本。
+  - 输出不合格时 `JudgeRecord.raw` 要保留原始回复（§18.24）；lite-model 的 `BadStructuredReply` 按它的规则
+    不带上游文本。
+  - judge 身份（§18.24）由 `JudgeSpec` 决定，lite-rag 已有的校准运行按这些键匹配。
+  仍然遵守同样的原则：按角色配置、无 fallback、费用和通道记在 `JudgeRecord`、付费调用受 §18.13 的开关管。
+  对应 lite-model 设计 §1 非目标与 §15（已关闭）。
 - **先校准才能用**：
   - 每个评审维度要有一个带人工标签的校准集，可以用 L2 的构造法得到确定的标签。
   - 校准就是一次 `judging` pack 的运行；一致率达到 Suite 里的阈值，才允许在正式 Suite 里引用这个评审。

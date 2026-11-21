@@ -67,7 +67,10 @@ README, releases stay GitHub Release wheels (no PyPI). Next: E6 agent pack, when
    only under the opt-in marker `-m ollama`. Never call llm-gateway subscription profiles (`gpt-sub`, `claude-sub`)
    or per-token profiles from tests or on your own initiative. CI mode refuses anything not declared `free`, unless
    both `LITE_EVAL_ALLOW_PAID=1` and the suite's `allow_paid_in_ci: true` are set (design §18.13).
-9. **lite-eval never depends on a project it evaluates.** Target adapters live in the user's repo.
+9. **lite-eval never depends on a project it evaluates.** Target adapters live in the user's repo. The same
+   reason makes the model judges the workspace's one exception to "every LLM call goes through lite-model":
+   `judges/client.py` calls Ollama `/api/chat` and OpenAI-compatible endpoints directly, so the instrument stays
+   fixed while the systems under test change (design §9, owner-confirmed 2026-11-21).
 10. **Honest exit codes.** 0 pass, 1 gate failed, 2 config/input error, 3 run failed. Nothing swallows a failure.
 11. **No customer material, real names or keys in datasets or fixtures.** Redact before writing run records when a
     suite asks for it. Secrets only from environment variables; never commit `.env*` except `.env.example`.
