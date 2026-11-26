@@ -124,7 +124,7 @@ pnpm e2e                             # Playwright against the built Viewer
    source: diff before every check and commit.
 2. Definition of done: backend ruff, ruff format, mypy, pytest pass; frontend typecheck, lint, test, build, e2e pass
    when the stage touches it; acceptance items covered by tests; design updated if behaviour changed.
-3. Conventional Commits (`feat(runner): …`). All code-facing text (comments, commits, logs) in English.
+3. Conventional Commits (`feat(runner): …`). All code-facing text (comments, commits, logs) and docs (design doc, README, plans) in English; Chinese only as examples or test data.
 4. Run tests, read the summary line, and only then commit — never `pytest | tail && git commit` (a pipeline's exit
    status is the last command's). After each push, read CI: `gh run list --limit 3 --json headSha,conclusion`.
 5. **Stage close-out — after a stage passes its checks, before its commit and before the next stage starts:**
